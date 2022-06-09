@@ -3,7 +3,7 @@ Generative models with TensorFlow, including Generative Adversarial Networks (GA
 
 
 You can find below an illustration of generative models from [lilianweng](https://lilianweng.github.io/posts/2021-07-11-diffusion-models/) blog.
-![alt text](inputs/generative_models.png "Generative models")
+![alt text](inputs/generative-overview.png "Generative models")
 
 
 ## Models
