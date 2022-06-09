@@ -1,6 +1,11 @@
 # generative-models
 Generative models with TensorFlow, including Generative Adversarial Networks (GAN), Diffusion Models (DM) and Variational Auto-Encoders (VAE).
 
+
+You can find below an illustration of generative models from [lilianweng](https://lilianweng.github.io/posts/2021-07-11-diffusion-models/) blog.
+![alt text](inputs/generative_models.png "Generative models")
+
+
 ## Models
 | Article | arXiv | Year |  Type |
 |---    |:-:    |:-:    |:-:    |
