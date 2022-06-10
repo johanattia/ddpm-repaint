@@ -9,6 +9,5 @@ Below an illustration of generative models taxonomy from [lilianweng](https://li
 ## Models
 | Paper's code | arXiv | Year |  Type |
 |---    |:-:    |:-:    |:-:    |
-| [Auto-Encoding Variational Bayes](src/vae/auto_encoding_variational_bayes) | [https://arxiv.org/pdf/1312.6114.pdf](https://arxiv.org/pdf/1312.6114.pdf) | 2013 | VAE |
-| [Generative Adversarial Nets](src/gan/generative_adversarial_nets) | [https://arxiv.org/pdf/1406.2661.pdf](https://arxiv.org/pdf/1406.2661.pdf) | 2014 | GAN |
+| [Wasserstein GAN](src/gan/wasserstein_gan) | [https://arxiv.org/pdf/1701.07875.pdf](https://arxiv.org/pdf/1701.07875.pdf) | 2017 | GAN |
 | [Denoising Diffusion Probabilistic Models](src/dm/denoising_diffusion_probabilistic_models) | [https://arxiv.org/pdf/2006.11239.pdf](https://arxiv.org/pdf/2006.11239.pdf) | 2020 | DM |
