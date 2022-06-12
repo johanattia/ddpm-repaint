@@ -7,7 +7,8 @@ Below an illustration of generative models taxonomy from [lilianweng](https://li
 
 
 ## Models
-| Paper's code | arXiv | Year |  Type |
-|---    |:-:    |:-:    |:-:    |
-| [Wasserstein GAN](src/gan/wasserstein_gan) | [https://arxiv.org/pdf/1701.07875.pdf](https://arxiv.org/pdf/1701.07875.pdf) | 2017 | GAN |
-| [Denoising Diffusion Probabilistic Models](src/dm/denoising_diffusion_probabilistic_models) | [https://arxiv.org/pdf/2006.11239.pdf](https://arxiv.org/pdf/2006.11239.pdf) | 2020 | DM |
+| Paper's code | arXiv | Year |  Type | Status |
+|---    |:-:    |:-:    |:-:    |:-:    |
+| [Wasserstein GAN](src/gan/wasserstein_gan) | [https://arxiv.org/pdf/1701.07875.pdf](https://arxiv.org/pdf/1701.07875.pdf) | 2017 | GAN | **Not started** |
+| [A Style-Based Generator Architecture for Generative Adversarial Networks](src/gan/stylegan) | [https://arxiv.org/pdf/1812.04948.pdf](https://arxiv.org/pdf/1812.04948.pdf) | 2018 | GAN | **Not started** |
+| [Denoising Diffusion Probabilistic Models](src/dm/denoising_diffusion_probabilistic_models) | [https://arxiv.org/pdf/2006.11239.pdf](https://arxiv.org/pdf/2006.11239.pdf) | 2020 | DM | **In progress** |
