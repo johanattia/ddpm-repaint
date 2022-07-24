@@ -18,17 +18,15 @@ class DiffusionModel(tf.keras.Model):
         self, input_shape: tf.TensorShape, data_format: str = "channels_last", **kwargs
     ):
         super().__init__(**kwargs)
-
         self.input_shape = get_input_shape(input_shape)  # (H, W, C) or (C, H, W)
         self.flattened_shape = tf.reduce_prod(self.input_shape)
         self.data_format = data_format
 
-    def build(self, input_shape: tf.TensorShape):
-        raise NotImplementedError
-
     def compile(
         self,
         maxstep: int = 1000,
+        beta_min: float = 1e-4,
+        beta_max: float = 0.02,
         optimizer: Union[str, tf.keras.optimizers.Optimizer] = "adam",
         metrics: Union[str, tf.keras.metrics.Metric] = None,
         loss_weights: Union[Iterable[float], Dict[str, float]] = None,
@@ -39,6 +37,15 @@ class DiffusionModel(tf.keras.Model):
         **kwargs,
     ):
         self.maxstep = maxstep
+        self._beta_min = beta_min
+        self._beta_max = beta_max
+        steps = tf.range(
+            start=self._beta_min, limit=self._beta_max + 1, delta=1, dtype=tf.float32
+        )
+        alpha = 1 - (
+            self._beta_min + steps * (self._beta_max - self._beta_min) / self.maxstep
+        )
+        self._alpha = tf.math.cumprod(alpha)
         loss_obj = tf.keras.losses.MeanSquaredError()
         super().compile(
             optimizer=optimizer,
@@ -52,10 +59,12 @@ class DiffusionModel(tf.keras.Model):
             **kwargs,
         )
 
-    def get_alpha_schedule_(self, step: int) -> float:
+    def get_alpha_schedule(self, steps: tf.Tensor) -> tf.Tensor:
         if not self._is_compiled:
-            raise AttributeError("")
-        raise NotImplementedError
+            raise AttributeError(
+                "A `DiffusionModel` object must be compiled before use."
+            )
+        return tf.gather(params=self._alpha, indices=steps)
 
     def sampling(self, sampling_size: int = 32) -> tf.Tensor:
         dist = tfd.MultivariateNormalDiag(
@@ -78,24 +87,23 @@ class DiffusionModel(tf.keras.Model):
         )
         eps_target = dist.sample(batch_size)  # (B, H * W * C)
 
-        step = tf.random.uniform(
+        steps = tf.random.uniform(
             shape=[batch_size, 1], minval=1, maxval=self.maxstep, dtype=tf.int32
         )  # (B, 1)
-        alpha = self.get_alpha_schedule_(step)
+        alpha = self.get_alpha_schedule(steps)
         input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1 - alpha) * tf.reshape(
             eps_target, shape=tf.shape(x)
         )  # (B, H, W, C)
 
-        input_dict = {"input": input, "timestep": step}
+        input_tuple = (input, steps)  # {"input": input, "timestep": step}
 
         with tf.GradientTape() as tape:
-            eps_pred = flatten(self(input_dict, training=True))  # (B, H * W * C)
-            loss = self.compute_loss(input_dict, eps_target, eps_pred, sample_weight)
+            eps_pred = flatten(self(input_tuple, training=True))  # (B, H * W * C)
+            loss = self.compute_loss(input_tuple, eps_target, eps_pred, sample_weight)
 
         self._validate_target_and_loss(eps_target, loss)
-
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
-        return self.compute_metrics(input_dict, eps_target, eps_pred, sample_weight)
+        return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
 
     def get_config(self) -> Dict:
         config = super().get_config()
