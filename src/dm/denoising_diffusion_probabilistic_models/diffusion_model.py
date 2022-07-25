@@ -45,11 +45,11 @@ class DiffusionModel(tf.keras.Model):
         alpha = 1 - (
             self._beta_min + steps * (self._beta_max - self._beta_min) / self.maxstep
         )
-        self._alpha = tf.math.cumprod(alpha)
-        loss_obj = tf.keras.losses.MeanSquaredError()
+        self._alpha_scheduler = tf.math.cumprod(alpha)
+        loss = tf.keras.losses.MeanSquaredError()
         super().compile(
             optimizer=optimizer,
-            loss=loss_obj,
+            loss=loss,
             metrics=metrics,
             loss_weights=loss_weights,
             weighted_metrics=weighted_metrics,
@@ -59,12 +59,17 @@ class DiffusionModel(tf.keras.Model):
             **kwargs,
         )
 
-    def get_alpha_schedule(self, steps: tf.Tensor) -> tf.Tensor:
-        if not self._is_compiled:
+    def get_alpha_step(self, steps: tf.Tensor) -> tf.Tensor:
+        if not hasattr(self, "_alpha_scheduler"):
             raise AttributeError(
-                "A `DiffusionModel` object must be compiled before use."
+                "Must run `compile` method before using `get_alpha_step`."
             )
-        return tf.gather(params=self._alpha, indices=steps)
+        return tf.gather(params=self._alpha_scheduler, indices=steps)
+
+    @staticmethod
+    def get_timesteps_embedding(steps: tf.Tensor) -> tf.Tensor:
+        # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
+        raise NotImplementedError
 
     def sampling(self, sampling_size: int = 32) -> tf.Tensor:
         dist = tfd.MultivariateNormalDiag(
@@ -77,11 +82,11 @@ class DiffusionModel(tf.keras.Model):
     def train_step(
         self, data: Union[tf.Tensor, Iterable[tf.Tensor]]
     ) -> Dict[str, tf.Tensor]:
-        # Get input image tensor with shape (B, H, W, C)
+        # Input image tensor with shape (B, H, W, C)
         x, _, sample_weight = tf.keras.utils.unpack_x_y_sample_weight(data)
         batch_size, input_dim = tf.shape(flatten(x))  # (B, H * W * C)
 
-        # Define N(0,I) distribution then gaussian noise sampling
+        # Define N(0,I) distribution for gaussian noise sampling
         dist = tfd.MultivariateNormalDiag(
             loc=tf.zeros(shape=[input_dim], dtype=tf.float32)
         )
@@ -90,12 +95,12 @@ class DiffusionModel(tf.keras.Model):
         steps = tf.random.uniform(
             shape=[batch_size, 1], minval=1, maxval=self.maxstep, dtype=tf.int32
         )  # (B, 1)
-        alpha = self.get_alpha_schedule(steps)
+        alpha = self.get_alpha_step(steps)  # (B, 1)
         input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1 - alpha) * tf.reshape(
             eps_target, shape=tf.shape(x)
         )  # (B, H, W, C)
 
-        input_tuple = (input, steps)  # {"input": input, "timestep": step}
+        input_tuple = (input, steps)
 
         with tf.GradientTape() as tape:
             eps_pred = flatten(self(input_tuple, training=True))  # (B, H * W * C)
@@ -107,5 +112,7 @@ class DiffusionModel(tf.keras.Model):
 
     def get_config(self) -> Dict:
         config = super().get_config()
-        # config.update({})
-        raise NotImplementedError  # config
+        config.update(
+            {"input_shape": self.input_shape.as_list(), "data_format": self.data_format}
+        )
+        return config
