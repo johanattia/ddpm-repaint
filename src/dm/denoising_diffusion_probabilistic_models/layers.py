@@ -1,6 +1,7 @@
 """Layers needed for U-Net & PixelCNN++ models"""
 
 
+from multiprocessing.sharedctypes import Value
 from typing import Callable, Dict, Tuple, Union
 
 import tensorflow as tf
@@ -9,24 +10,47 @@ import tensorflow_addons as tfa
 from utils import clone_initializer
 
 
+def TimestepEmbedding(embed_dim: int) -> tf.Tensor:
+    # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
+    def sinusoidal_embedding(steps: tf.Tensor) -> tf.Tensor:
+        # input shape: (B, 1)
+        batch_size = tf.shape(steps)[0]
+        if steps.shape != tf.TensorShape([batch_size, 1]):
+            raise ValueError
+
+        half_dim = embed_dim // 2
+        const = -tf.math.log(10000.0) / (half_dim - 1)
+        const = tf.exp(
+            tf.expand_dims(tf.range(half_dim, dtype=tf.float32), axis=0) * const
+        )
+        const = tf.cast(steps, dtype=tf.float32) * const
+        step_embed = tf.concat([tf.sin(const), tf.cos(const)], axis=1)
+
+        if embed_dim % 2 == 1:
+            return tf.pad(step_embed, [[0, 0], [0, 1]])
+
+        return step_embed  # output shape: (B, embed_dim)
+
+    return tf.keras.layers.Lambda(sinusoidal_embedding)
+
+
 class CELU(tf.keras.layers.Layer):
     """Concatenated ELU, analoguous of Concatenated ReLU (http://arxiv.org/abs/1603.05201)."""
 
     def __init__(self, alpha: float = 1.0, axis: int = -1, **kwargs):
         super().__init__(**kwargs)
 
-        self._axis = axis
-        self.concat = tf.keras.layers.Concatenate(axis=self._axis)
-
-        self._alpha = float(alpha)
-        self.elu = tf.keras.layers.Elu(alpha=self._alpha)
+        self.axis = axis
+        self.concat = tf.keras.layers.Concatenate(axis=self.axis)
+        self.alpha = float(alpha)
+        self.elu = tf.keras.layers.Elu(alpha=self.alpha)
 
     def call(self, inputs: tf.Tensor) -> tf.Tensor:
         return self.elu(self.concat([inputs, -inputs]))
 
     def get_config(self) -> Dict:
         config = super().get_config()
-        config.update({"alpha": self._alpha, "axis": self._axis})
+        config.update({"alpha": self.alpha, "axis": self.axis})
         return config
 
 
