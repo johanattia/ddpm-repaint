@@ -20,6 +20,18 @@ class DiffusionModel(tf.keras.Model):
         super().__init__(**kwargs)
         self.input_shape = get_input_shape(input_shape)  # (H, W, C) or (C, H, W)
         self.flattened_shape = tf.reduce_prod(self.input_shape)
+
+        if data_format is None:
+            data_format = "channels_last"
+        elif data_format not in [
+            "channels_last",
+            "channels_first",
+        ]:
+            raise ValueError(
+                """`data_format` must value `channels_last` or `channels_first`. 
+                Default behavior to `channels_last`.
+                """
+            )
         self.data_format = data_format
 
     def compile(
@@ -37,19 +49,18 @@ class DiffusionModel(tf.keras.Model):
         **kwargs,
     ):
         self.maxstep = maxstep
-        self._beta_min = beta_min
-        self._beta_max = beta_max
+        self.beta_min = beta_min
+        self.beta_max = beta_max
         steps = tf.range(
-            start=self._beta_min, limit=self._beta_max + 1, delta=1, dtype=tf.float32
+            start=self.beta_min, limit=self.beta_max + 1, delta=1, dtype=tf.float32
         )
-        alpha = 1 - (
-            self._beta_min + steps * (self._beta_max - self._beta_min) / self.maxstep
+        self._beta_scheduler = (
+            self.beta_min + steps * (self.beta_max - self.beta_min) / self.maxstep
         )
-        self._alpha_scheduler = tf.math.cumprod(alpha)
-        loss = tf.keras.losses.MeanSquaredError()
+        self._alpha_scheduler = tf.math.cumprod(1 - self._beta_scheduler)
         super().compile(
             optimizer=optimizer,
-            loss=loss,
+            loss=tf.keras.losses.MeanSquaredError(),
             metrics=metrics,
             loss_weights=loss_weights,
             weighted_metrics=weighted_metrics,
@@ -66,12 +77,15 @@ class DiffusionModel(tf.keras.Model):
             )
         return tf.gather(params=self._alpha_scheduler, indices=steps)
 
-    @staticmethod
-    def get_timesteps_embedding(steps: tf.Tensor) -> tf.Tensor:
-        # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
-        raise NotImplementedError
+    def get_beta_step(self, steps: tf.Tensor) -> tf.Tensor:
+        if not hasattr(self, "_beta_scheduler"):
+            raise AttributeError(
+                "Must run `compile` method before using `get_beta_step`."
+            )
+        return tf.gather(params=self._beta_scheduler, indices=steps)
 
-    def sampling(self, sampling_size: int = 32) -> tf.Tensor:
+    def sampling(self, sampling_size: int = 32, verbose: int = 1) -> tf.Tensor:
+        # Add https://www.tensorflow.org/api_docs/python/tf/keras/utils/Progbar
         dist = tfd.MultivariateNormalDiag(
             loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
         )
@@ -110,9 +124,26 @@ class DiffusionModel(tf.keras.Model):
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
         return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
 
-    def get_config(self) -> Dict:
-        config = super().get_config()
-        config.update(
-            {"input_shape": self.input_shape.as_list(), "data_format": self.data_format}
-        )
-        return config
+    def get_config(self, include_compile: bool = False) -> Dict:
+        base_config = super().get_config()
+        config = {
+            "input_shape": self.input_shape.as_list(),
+            "data_format": self.data_format,
+        }
+        if include_compile:
+            config.update(
+                {
+                    "compile": {
+                        "maxstep": self.maxstep,
+                        "beta_min": self.beta_min,
+                        "beta_max": self.beta_max,
+                    }
+                }
+            )
+        return dict(base_config.items() + config.items())
+
+    @classmethod
+    def from_config(cls, config: Dict):
+        compile = config.pop("compile", None)
+        del compile
+        return cls(**config)
