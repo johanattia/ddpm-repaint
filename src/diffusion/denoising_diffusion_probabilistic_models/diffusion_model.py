@@ -62,34 +62,35 @@ class DiffusionModel(tf.keras.Model):
         return tf.gather(params=self._beta_schedule, indices=steps)
 
     def sampling(self, sampling_size: int = 32, verbose: int = 1) -> tf.Tensor:
+        # Gaussian noise as diffusion input
         x = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
         x = tf.reshape(x, [sampling_size] + self.input_shape)  # (B, H, W, C)
 
         step = tf.Variable(0, dtype=tf.int32)
         progbar = tf.keras.utils.Progbar(target=self.maxstep, verbose=verbose)
 
-        for i in range(self.maxstep):
+        # Diffusion sampling
+        while step < self.maxstep:
             z = (
                 self.gaussian_dist.sample(sampling_size)
                 if step > 1
                 else tf.zeros([sampling_size, self.flattened_shape])
             )
             z = tf.reshape(z, [sampling_size] + self.input_shape)
+
             steps = tf.expand_dims(tf.repeat(step, [sampling_size]), axis=1)
             sigma = tf.math.sqrt(self.get_beta_step(steps))
-
             alpha_steps = self.get_alpha_step(steps)
             alpha_bar_steps = self.get_alpha_bar_step(steps)
 
-            c1 = 1.0 / tf.math.sqrt(alpha_steps)
-            c2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_bar_steps)
+            const1 = 1.0 / tf.math.sqrt(alpha_steps)
+            const2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_bar_steps)
 
             input_tuple = (x, steps)
-            x = c1 * (x - c2 * self.predict(input_tuple, verbose=0)) + sigma * z
+            x = const1 * (x - const2 * self.predict(input_tuple, verbose=0)) + sigma * z
 
             progbar.update(step, finalize=False)
             step.assign_add(1)
-
         progbar.update(step, finalize=True)
 
         return x
@@ -104,24 +105,26 @@ class DiffusionModel(tf.keras.Model):
         if tf.shape(x) != [batch_size] + self.input_shape:
             raise ValueError(f"Input must have shape {self.input_shape}")
 
-        # Gaussian noise sampling
-        eps_target = self.gaussian_dist.sample(batch_size)  # (B, H * W * C)
+        # Gaussian noise sampling (B, H * W * C) => (B, H, W, C)
+        eps_target = self.gaussian_dist.sample(batch_size)
+        eps = tf.reshape(eps_target, shape=[batch_size] + self.input_shape)
 
+        # Prepare forward input (B, H, W, C)
         steps = tf.random.uniform(
             shape=[batch_size, 1], minval=1, maxval=self.maxstep, dtype=tf.int32
         )  # (B, 1)
         alpha = self.get_alpha_bar_step(steps)  # (B, 1)
-        input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * tf.reshape(
-            eps_target, shape=tf.shape(x)
-        )  # (B, H, W, C)
+        input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * eps
 
         input_tuple = (input, steps)
 
         with tf.GradientTape() as tape:
+            # Run forward pass.
             eps_pred = flatten(self(input_tuple, training=True))  # (B, H * W * C)
             loss = self.compute_loss(input_tuple, eps_target, eps_pred, sample_weight)
-
         self._validate_target_and_loss(eps_target, loss)
+
+        # Backpropagation: run backward pass.
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
         return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
 
