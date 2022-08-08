@@ -91,6 +91,7 @@ class DiffusionModel(tf.keras.Model):
 
             progbar.update(step, finalize=False)
             step.assign_add(1)
+
         progbar.update(step, finalize=True)
 
         return x
