@@ -15,11 +15,20 @@ flatten = tf.keras.layers.Flatten()
 
 class DiffusionModel(tf.keras.Model):
     def __init__(
-        self, input_shape: tf.TensorShape, data_format: str = "channels_last", **kwargs
+        self,
+        input_shape: tf.TensorShape = (256, 256, 3),
+        data_format: str = "channels_last",
+        maxstep: int = 1000,
+        beta_min: float = 1e-4,
+        beta_max: float = 0.02,
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.input_shape = get_input_shape(input_shape)  # (H, W, C) or (C, H, W)
         self.flattened_shape = tf.reduce_prod(self.input_shape)
+        self.gaussian_dist = tfd.MultivariateNormalDiag(
+            loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
+        )
 
         if data_format is None:
             data_format = "channels_last"
@@ -34,69 +43,26 @@ class DiffusionModel(tf.keras.Model):
             )
         self.data_format = data_format
 
-    def compile(
-        self,
-        maxstep: int = 1000,
-        beta_min: float = 1e-4,
-        beta_max: float = 0.02,
-        optimizer: Union[str, tf.keras.optimizers.Optimizer] = "adam",
-        metrics: Union[str, tf.keras.metrics.Metric] = None,
-        loss_weights: Union[Iterable[float], Dict[str, float]] = None,
-        weighted_metrics: Iterable[tf.keras.metrics.Metric] = None,
-        run_eagerly: bool = False,
-        steps_per_execution: int = 1,
-        jit_compile: bool = False,
-        **kwargs,
-    ):
         self.maxstep = maxstep
         self.beta_min = beta_min
         self.beta_max = beta_max
-        steps = tf.range(
-            start=self.beta_min, limit=self.beta_max + 1, delta=1, dtype=tf.float32
+        self._beta_schedule = tf.linspace(
+            start=self.beta_min, stop=self.beta_max, num=self.maxstep
         )
-        self._beta_scheduler = (
-            self.beta_min + steps * (self.beta_max - self.beta_min) / self.maxstep
-        )
-        self._alpha_scheduler = 1 - self._beta_scheduler
-        self._alpha_prod_scheduler = tf.math.cumprod(self._alpha_scheduler)
-        super().compile(
-            optimizer=optimizer,
-            loss=tf.keras.losses.MeanSquaredError(),
-            metrics=metrics,
-            loss_weights=loss_weights,
-            weighted_metrics=weighted_metrics,
-            run_eagerly=run_eagerly,
-            steps_per_execution=steps_per_execution,
-            jit_compile=jit_compile,
-            **kwargs,
-        )
+        self._alpha_schedule = 1.0 - self._beta_schedule
+        self._alpha_bar_schedule = tf.math.cumprod(self._alpha_schedule)
 
     def get_alpha_step(self, steps: tf.Tensor) -> tf.Tensor:
-        if not hasattr(self, "_alpha_scheduler"):
-            raise AttributeError(
-                "Must run `compile` method before using `get_alpha_step`."
-            )
-        return tf.gather(params=self._alpha_scheduler, indices=steps)
+        return tf.gather(params=self._alpha_schedule, indices=steps)
 
-    def get_alpha_prod_step(self, steps: tf.Tensor) -> tf.Tensor:
-        if not hasattr(self, "_alpha_prod_scheduler"):
-            raise AttributeError(
-                "Must run `compile` method before using `get_alpha_prod_step`."
-            )
-        return tf.gather(params=self._alpha_prod_scheduler, indices=steps)
+    def get_alpha_bar_step(self, steps: tf.Tensor) -> tf.Tensor:
+        return tf.gather(params=self._alpha_bar_schedule, indices=steps)
 
     def get_beta_step(self, steps: tf.Tensor) -> tf.Tensor:
-        if not hasattr(self, "_beta_scheduler"):
-            raise AttributeError(
-                "Must run `compile` method before using `get_beta_step`."
-            )
-        return tf.gather(params=self._beta_scheduler, indices=steps)
+        return tf.gather(params=self._beta_schedule, indices=steps)
 
     def sampling(self, sampling_size: int = 32, verbose: int = 1) -> tf.Tensor:
-        dist = tfd.MultivariateNormalDiag(
-            loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
-        )
-        x = dist.sample(sampling_size)  # (B, H * W * C)
+        x = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
         x = tf.reshape(x, [sampling_size] + self.input_shape)  # (B, H, W, C)
 
         step = tf.Variable(0, dtype=tf.int32)
@@ -104,7 +70,7 @@ class DiffusionModel(tf.keras.Model):
 
         for i in range(self.maxstep):
             z = (
-                dist.sample(sampling_size)
+                self.gaussian_dist.sample(sampling_size)
                 if step > 1
                 else tf.zeros([sampling_size, self.flattened_shape])
             )
@@ -113,10 +79,10 @@ class DiffusionModel(tf.keras.Model):
             sigma = tf.math.sqrt(self.get_beta_step(steps))
 
             alpha_steps = self.get_alpha_step(steps)
-            alpha_prod_steps = self.get_alpha_prod_step(steps)
+            alpha_bar_steps = self.get_alpha_bar_step(steps)
 
             c1 = 1.0 / tf.math.sqrt(alpha_steps)
-            c2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_prod_steps)
+            c2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_bar_steps)
 
             input_tuple = (x, steps)
             x = c1 * (x - c2 * self.predict(input_tuple, verbose=0)) + sigma * z
@@ -125,6 +91,7 @@ class DiffusionModel(tf.keras.Model):
             step.assign_add(1)
 
         progbar.update(step, finalize=True)
+
         return x
 
     def train_step(
@@ -137,16 +104,13 @@ class DiffusionModel(tf.keras.Model):
         if tf.shape(x) != [batch_size] + self.input_shape:
             raise ValueError(f"Input must have shape {self.input_shape}")
 
-        # Define N(0,I) distribution for gaussian noise sampling
-        dist = tfd.MultivariateNormalDiag(
-            loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
-        )
-        eps_target = dist.sample(batch_size)  # (B, H * W * C)
+        # Gaussian noise sampling
+        eps_target = self.gaussian_dist.sample(batch_size)  # (B, H * W * C)
 
         steps = tf.random.uniform(
             shape=[batch_size, 1], minval=1, maxval=self.maxstep, dtype=tf.int32
         )  # (B, 1)
-        alpha = self.get_alpha_prod_step(steps)  # (B, 1)
+        alpha = self.get_alpha_bar_step(steps)  # (B, 1)
         input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * tf.reshape(
             eps_target, shape=tf.shape(x)
         )  # (B, H, W, C)
@@ -161,26 +125,19 @@ class DiffusionModel(tf.keras.Model):
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
         return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
 
-    def get_config(self, include_compile: bool = False) -> Dict:
-        base_config = super().get_config()
-        config = {
-            "input_shape": self.input_shape.as_list(),
-            "data_format": self.data_format,
-        }
-        if include_compile:
-            config.update(
-                {
-                    "compile": {
-                        "maxstep": self.maxstep,
-                        "beta_min": self.beta_min,
-                        "beta_max": self.beta_max,
-                    }
-                }
-            )
-        return dict(base_config.items() + config.items())
+    def get_config(self) -> Dict:
+        config = super().get_config()
+        config.update(
+            {
+                "input_shape": self.input_shape.as_list(),
+                "data_format": self.data_format,
+                "maxstep": self.maxstep,
+                "beta_min": self.beta_min,
+                "beta_max": self.beta_max,
+            }
+        )
+        return config
 
     @classmethod
     def from_config(cls, config: Dict):
-        compile = config.pop("compile", None)
-        del compile
         return cls(**config)
