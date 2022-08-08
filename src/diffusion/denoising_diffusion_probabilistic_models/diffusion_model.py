@@ -116,7 +116,7 @@ class DiffusionModel(tf.keras.Model):
             alpha_prod_steps = self.get_alpha_prod_step(steps)
 
             c1 = 1.0 / tf.math.sqrt(alpha_steps)
-            c2 = (1 - alpha_steps) / tf.math.sqrt(1 - alpha_prod_steps)
+            c2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_prod_steps)
 
             input_tuple = (x, steps)
             x = c1 * (x - c2 * self.predict(input_tuple, verbose=0)) + sigma * z
@@ -147,7 +147,7 @@ class DiffusionModel(tf.keras.Model):
             shape=[batch_size, 1], minval=1, maxval=self.maxstep, dtype=tf.int32
         )  # (B, 1)
         alpha = self.get_alpha_prod_step(steps)  # (B, 1)
-        input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1 - alpha) * tf.reshape(
+        input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * tf.reshape(
             eps_target, shape=tf.shape(x)
         )  # (B, H, W, C)
 
