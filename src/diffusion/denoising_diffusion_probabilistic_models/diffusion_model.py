@@ -57,7 +57,8 @@ class DiffusionModel(tf.keras.Model):
         self._beta_scheduler = (
             self.beta_min + steps * (self.beta_max - self.beta_min) / self.maxstep
         )
-        self._alpha_scheduler = tf.math.cumprod(1 - self._beta_scheduler)
+        self._alpha_scheduler = 1 - self._beta_scheduler
+        self._alpha_prod_scheduler = tf.math.cumprod(self._alpha_scheduler)
         super().compile(
             optimizer=optimizer,
             loss=tf.keras.losses.MeanSquaredError(),
@@ -77,6 +78,13 @@ class DiffusionModel(tf.keras.Model):
             )
         return tf.gather(params=self._alpha_scheduler, indices=steps)
 
+    def get_alpha_prod_step(self, steps: tf.Tensor) -> tf.Tensor:
+        if not hasattr(self, "_alpha_prod_scheduler"):
+            raise AttributeError(
+                "Must run `compile` method before using `get_alpha_prod_step`."
+            )
+        return tf.gather(params=self._alpha_prod_scheduler, indices=steps)
+
     def get_beta_step(self, steps: tf.Tensor) -> tf.Tensor:
         if not hasattr(self, "_beta_scheduler"):
             raise AttributeError(
@@ -85,31 +93,60 @@ class DiffusionModel(tf.keras.Model):
         return tf.gather(params=self._beta_scheduler, indices=steps)
 
     def sampling(self, sampling_size: int = 32, verbose: int = 1) -> tf.Tensor:
-        # Add https://www.tensorflow.org/api_docs/python/tf/keras/utils/Progbar
         dist = tfd.MultivariateNormalDiag(
             loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
         )
         x = dist.sample(sampling_size)  # (B, H * W * C)
-        x = tf.reshape(x, [sampling_size] + self.input_shape.as_list())  # (B, H, W, C)
-        raise NotImplementedError
+        x = tf.reshape(x, [sampling_size] + self.input_shape)  # (B, H, W, C)
+
+        step = tf.Variable(0, dtype=tf.int32)
+        progbar = tf.keras.utils.Progbar(target=self.maxstep, verbose=verbose)
+
+        for i in range(self.maxstep):
+            z = (
+                dist.sample(sampling_size)
+                if step > 1
+                else tf.zeros([sampling_size, self.flattened_shape])
+            )
+            z = tf.reshape(z, [sampling_size] + self.input_shape)
+            steps = tf.expand_dims(tf.repeat(step, [sampling_size]), axis=1)
+            sigma = tf.math.sqrt(self.get_beta_step(steps))
+
+            alpha_steps = self.get_alpha_step(steps)
+            alpha_prod_steps = self.get_alpha_prod_step(steps)
+
+            c1 = 1.0 / tf.math.sqrt(alpha_steps)
+            c2 = (1 - alpha_steps) / tf.math.sqrt(1 - alpha_prod_steps)
+
+            input_tuple = (x, steps)
+            x = c1 * (x - c2 * self.predict(input_tuple, verbose=0)) + sigma * z
+
+            progbar.update(step, finalize=False)
+            step.assign_add(1)
+
+        progbar.update(step, finalize=True)
+        return x
 
     def train_step(
         self, data: Union[tf.Tensor, Iterable[tf.Tensor]]
     ) -> Dict[str, tf.Tensor]:
-        # Input image tensor with shape (B, H, W, C)
+        # Input with shape (B, H, W, C)
         x, _, sample_weight = tf.keras.utils.unpack_x_y_sample_weight(data)
-        batch_size, input_dim = tf.shape(flatten(x))  # (B, H * W * C)
+        batch_size = tf.shape(x)[0]
+
+        if tf.shape(x) != [batch_size] + self.input_shape:
+            raise ValueError(f"Input must have shape {self.input_shape}")
 
         # Define N(0,I) distribution for gaussian noise sampling
         dist = tfd.MultivariateNormalDiag(
-            loc=tf.zeros(shape=[input_dim], dtype=tf.float32)
+            loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
         )
         eps_target = dist.sample(batch_size)  # (B, H * W * C)
 
         steps = tf.random.uniform(
             shape=[batch_size, 1], minval=1, maxval=self.maxstep, dtype=tf.int32
         )  # (B, 1)
-        alpha = self.get_alpha_step(steps)  # (B, 1)
+        alpha = self.get_alpha_prod_step(steps)  # (B, 1)
         input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1 - alpha) * tf.reshape(
             eps_target, shape=tf.shape(x)
         )  # (B, H, W, C)
