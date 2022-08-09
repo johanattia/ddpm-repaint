@@ -10,7 +10,7 @@ import tensorflow_addons as tfa
 from utils import clone_initializer
 
 
-def TimestepEmbedding(embed_dim: int) -> tf.Tensor:
+def SinusoidalPositionEmbedding(embed_dim: int) -> tf.Tensor:
     # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
     def sinusoidal_embedding(steps: tf.Tensor) -> tf.Tensor:
         # input shape: (B, 1)
@@ -35,23 +35,15 @@ def TimestepEmbedding(embed_dim: int) -> tf.Tensor:
 
 
 class CELU(tf.keras.layers.Layer):
-    """Concatenated ELU, analoguous of Concatenated ReLU (http://arxiv.org/abs/1603.05201)."""
-
     def __init__(self, alpha: float = 1.0, axis: int = -1, **kwargs):
         super().__init__(**kwargs)
-
         self.axis = axis
-        self.concat = tf.keras.layers.Concatenate(axis=self.axis)
         self.alpha = float(alpha)
+        self.concat = tf.keras.layers.Concatenate(axis=self.axis)
         self.elu = tf.keras.layers.Elu(alpha=self.alpha)
 
     def call(self, inputs: tf.Tensor) -> tf.Tensor:
         return self.elu(self.concat([inputs, -inputs]))
-
-    def get_config(self) -> Dict:
-        config = super().get_config()
-        config.update({"alpha": self.alpha, "axis": self.axis})
-        return config
 
 
 class ResidualBlock(tf.keras.layers.Layer):
@@ -80,7 +72,6 @@ class ResidualBlock(tf.keras.layers.Layer):
     ):
         self.name = kwargs.pop("name", "residual_block")
         super().__init__(**kwargs)
-
         self._output_channel = output_channel
         self._conv_shortcut = conv_shortcut
         self.filters = filters
@@ -93,21 +84,20 @@ class ResidualBlock(tf.keras.layers.Layer):
         self.groups = groups
         self.activation = activation
         self.use_bias = use_bias
-
-        self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
-        self.bias_initializer = tf.keras.initializers.get(bias_initializer)
-        self.kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
-        self.bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
-        self.activity_regularizer = tf.keras.regularizers.get(activity_regularizer)
-        self.kernel_constraint = tf.keras.constraints.get(kernel_constraint)
-        self.bias_constraint = tf.keras.constraints.get(bias_constraint)
+        self._kernel_initializer = tf.keras.initializers.get(kernel_initializer)
+        self._bias_initializer = tf.keras.initializers.get(bias_initializer)
+        self._kernel_regularizer = tf.keras.regularizers.get(kernel_regularizer)
+        self._bias_regularizer = tf.keras.regularizers.get(bias_regularizer)
+        self._activity_regularizer = tf.keras.regularizers.get(activity_regularizer)
+        self._kernel_constraint = tf.keras.constraints.get(kernel_constraint)
+        self._bias_constraint = tf.keras.constraints.get(bias_constraint)
 
         self.common_weights_params = dict(
-            kernel_regularizer=self.kernel_regularizer,
-            bias_regularizer=self.bias_regularizer,
-            activity_regularizer=self.activity_regularizer,
-            kernel_constraint=self.kernel_constraint,
-            bias_constraint=self.bias_constraint,
+            kernel_regularizer=self._kernel_regularizer,
+            bias_regularizer=self._bias_regularizer,
+            activity_regularizer=self._activity_regularizer,
+            kernel_constraint=self._kernel_constraint,
+            bias_constraint=self._bias_constraint,
         )
 
     def build(self, input_shape: tf.TensorShape):
@@ -134,8 +124,8 @@ class ResidualBlock(tf.keras.layers.Layer):
                 groups=self.groups,
                 activation=self.activation,
                 use_bias=self.use_bias,
-                kernel_initializer=clone_initializer(self.kernel_initializer),
-                bias_initializer=clone_initializer(self.bias_initializer),
+                kernel_initializer=clone_initializer(self._kernel_initializer),
+                bias_initializer=clone_initializer(self._bias_initializer),
                 **self.common_weights_params,
                 name=f"{self.name}_{i}",
             )
@@ -153,8 +143,8 @@ class ResidualBlock(tf.keras.layers.Layer):
                     groups=self.groups,
                     activation=self.activation,
                     use_bias=self.use_bias,
-                    kernel_initializer=clone_initializer(self.kernel_initializer),
-                    bias_initializer=clone_initializer(self.bias_initializer),
+                    kernel_initializer=clone_initializer(self._kernel_initializer),
+                    bias_initializer=clone_initializer(self._bias_initializer),
                     **self.common_weights_params,
                     name=f"{self.name}_{2}",
                 )
