@@ -58,6 +58,69 @@ class CELU(tf.keras.layers.Layer):
         return config
 
 
+class Upsample(tf.keras.layers.Layer):
+    def __init__(
+        self,
+        size: Tuple[int] = (2, 2),
+        data_format: str = "channels_last",
+        use_conv: bool = True,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.size = size
+        self.data_format = data_format
+        self._use_conv = use_conv
+
+    def build(self, input_shape: tf.TensorShape):
+        input_shape = tf.TensorShape(input_shape)
+        if len(input_shape) != 4:
+            raise ValueError(
+                f"""Input of an `Upsample` layer should correspond to a batch of images.
+                Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
+                """
+            )
+        if self.data_format == "channels_last":  # (B, H, W, C)
+            channels = input_shape[-1]
+        else:  # (B, C, H, W)
+            channels = input_shape[1]
+
+        self.upsample = tf.keras.layers.UpSampling2D(
+            size=(2, 2),
+            data_format=self.data_format,
+            interpolation="nearest",
+        )
+        if self._use_conv:
+            self.conv = tf.keras.layers.Conv2D(
+                filters=channels,
+                kernel_size=(3, 3),
+                strides=(1, 1),
+                padding="same",
+                data_format=self.data_format,
+                dilation_rate=(1, 1),
+                use_bias=True,
+                kernel_initializer=tf.keras.initializers.VarianceScaling(
+                    scale=1.0, mode="fan_avg", distribution="uniform"
+                ),
+            )
+        super().build(input_shape)
+
+    def call(self, inputs: tfa.dtypes.FloatTensorLike):
+        x = self.upsample(inputs)
+
+        if self._use_conv:
+            return self.conv(x)
+
+        return x
+
+
+class Downsample(tf.keras.layers.Layer):
+    def __init__(self, use_conv: bool = True) -> None:
+        super().__init__()
+
+    def call(self, inputs: tfa.dtypes.FloatTensorLike):
+        pass
+
+
 class ConvBlock(tf.keras.layers.Layer):
     def __init__(
         self,
