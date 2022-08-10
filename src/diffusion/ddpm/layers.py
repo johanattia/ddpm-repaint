@@ -60,14 +60,9 @@ class CELU(tf.keras.layers.Layer):
 
 class Upsample(tf.keras.layers.Layer):
     def __init__(
-        self,
-        size: Tuple[int] = (2, 2),
-        data_format: str = "channels_last",
-        use_conv: bool = True,
-        **kwargs,
-    ) -> None:
+        self, data_format: str = "channels_last", use_conv: bool = True, **kwargs
+    ):
         super().__init__(**kwargs)
-        self.size = size
         self.data_format = data_format
         self._use_conv = use_conv
 
@@ -79,17 +74,18 @@ class Upsample(tf.keras.layers.Layer):
                 Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
                 """
             )
-        if self.data_format == "channels_last":  # (B, H, W, C)
-            channels = input_shape[-1]
-        else:  # (B, C, H, W)
-            channels = input_shape[1]
-
         self.upsample = tf.keras.layers.UpSampling2D(
             size=(2, 2),
             data_format=self.data_format,
             interpolation="nearest",
         )
+
         if self._use_conv:
+            if self.data_format == "channels_last":  # (B, H, W, C)
+                channels = input_shape[-1]
+            else:  # (B, C, H, W)
+                channels = input_shape[1]
+
             self.conv = tf.keras.layers.Conv2D(
                 filters=channels,
                 kernel_size=(3, 3),
@@ -113,12 +109,86 @@ class Upsample(tf.keras.layers.Layer):
         return x
 
 
+def downsample_pool(data_format: str = "channels_last", channels: int = None):
+    del channels
+    return tf.keras.layers.AveragePooling2D(
+        pool_size=(2, 2),
+        strides=(2, 2),
+        data_format=data_format,
+    )
+
+
+def downsample_conv(data_format: str = "channels_last", channels: int = 3):
+    return tf.keras.layers.Conv2D(
+        filters=channels,
+        kernel_size=(3, 3),
+        strides=(2, 2),
+        padding="same",
+        data_format=data_format,
+        dilation_rate=(1, 1),
+        use_bias=True,
+        kernel_initializer=tf.keras.initializers.VarianceScaling(
+            scale=1.0, mode="fan_avg", distribution="uniform"
+        ),
+    )
+
+
+def downsample_pool_and_conv(data_format: str = "channels_last", channels: int = 3):
+    return tf.keras.Sequential(
+        [
+            tf.keras.layers.AveragePooling2D(
+                pool_size=(2, 2),
+                strides=(2, 2),
+                data_format=data_format,
+            ),
+            tf.keras.layers.Conv2D(
+                filters=channels,
+                kernel_size=(3, 3),
+                strides=(1, 1),
+                padding="same",
+                data_format=data_format,
+                dilation_rate=(1, 1),
+                use_bias=True,
+                kernel_initializer=tf.keras.initializers.VarianceScaling(
+                    scale=1.0, mode="fan_avg", distribution="uniform"
+                ),
+            ),
+        ]
+    )
+
+
 class Downsample(tf.keras.layers.Layer):
-    def __init__(self, use_conv: bool = True) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        downsample_fn: Callable[[str, int], tf.keras.layers.Layer],
+        data_format: str = "channels_last",
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.downsample_fn = downsample_fn
+        self.data_format = data_format
+
+    def build(self, input_shape: tf.TensorShape):
+        input_shape = tf.TensorShape(input_shape)
+        if len(input_shape) != 4:
+            raise ValueError(
+                f"""Input of a `Downsample` layer should correspond to a batch of images.
+                Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
+                """
+            )
+
+        if self.data_format == "channels_last":  # (B, H, W, C)
+            channels = input_shape[-1]
+        else:  # (B, C, H, W)
+            channels = input_shape[1]
+
+        self.downsample = self.downsample_fn(
+            data_format=self.data_format, channels=channels
+        )
+        super().build(input_shape)
 
     def call(self, inputs: tfa.dtypes.FloatTensorLike):
-        pass
+        return self.downsample(inputs)
 
 
 class ConvBlock(tf.keras.layers.Layer):
