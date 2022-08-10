@@ -201,7 +201,6 @@ class ResidualBlock(tf.keras.layers.Layer):
                 scale=1.0, mode="fan_avg", distribution="uniform"
             ),
         )
-
         # Projection of input tensor in output space before residual addition
         self.output_projection = None
         if self.output_channel != channels:
@@ -223,8 +222,10 @@ class ResidualBlock(tf.keras.layers.Layer):
                     "abcd,de->abce",
                     output_shape=(None, None, self.output_channel),
                     bias_axes="e",
+                    kernel_initializer=tf.keras.initializers.VarianceScaling(
+                        scale=1.0, mode="fan_avg", distribution="uniform"
+                    ),
                 )
-
         super().build(input_shape)
 
     def call(
