@@ -10,6 +10,9 @@ import tensorflow_addons as tfa
 from utils import clone_initializer
 
 
+# TODO: Review ConvBlock & ResidualConv (groupnorm, output projection) for channels_first
+
+
 def PositionEmbedding(embed_dim: int):
     # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
     def _sinusoidal_embedding(
