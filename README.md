@@ -1,5 +1,5 @@
 # generative-models
-Generative models with TensorFlow, including pure Generative Adversarial Networks (GAN), Diffusion Models (DM) as well as recent Encoder-Decoder models.
+Generative models with TensorFlow, including Generative Adversarial Networks, Diffusion Models as well as recent Encoder-Decoder-like models.
 
 
 Below an illustration of generative models taxonomy from [lilianweng](https://lilianweng.github.io/posts/2021-07-11-diffusion-models/) blog.
@@ -7,11 +7,11 @@ Below an illustration of generative models taxonomy from [lilianweng](https://li
 
 
 ## Models
-| Paper's code | arXiv | Year |  Type | Status |
+| Source code | arXiv | Year | Status |
 |---    |:-:    |:-:    |:-:    |:-:    |
-| [Wasserstein GAN](src/gan/wasserstein_gan) | [https://arxiv.org/pdf/1701.07875.pdf](https://arxiv.org/pdf/1701.07875.pdf) | 2017 | GAN | **Not started** |
-| [A Style-Based Generator Architecture for Generative Adversarial Networks](src/gan/stylegan) | [https://arxiv.org/pdf/1812.04948.pdf](https://arxiv.org/pdf/1812.04948.pdf) | 2018 | GAN | **Not started** |
-| [Denoising Diffusion Probabilistic Models](src/dm/denoising_diffusion_probabilistic_models) | [https://arxiv.org/pdf/2006.11239.pdf](https://arxiv.org/pdf/2006.11239.pdf) | 2020 | DM | **In progress** |
-| [Generative Adversarial Transformers](src/gan/ganformer) | [https://arxiv.org/pdf/2103.01209.pdf](https://arxiv.org/pdf/2103.01209.pdf) | 2021 | GAN | **Not started** |
-| [Vector-quantized Image Modeling with Improved VQGAN](src/gan/vit_vqgan) | [https://arxiv.org/pdf/2110.04627.pdf](https://arxiv.org/pdf/2110.04627.pdf) | 2021 | GAN | **Not started** |
+| [Wasserstein GAN](src/wasserstein_gan) | [https://arxiv.org/pdf/1701.07875.pdf](https://arxiv.org/pdf/1701.07875.pdf) | 2017 | **Not started** |
+| [A Style-Based Generator Architecture for Generative Adversarial Networks](src/stylegan) | [https://arxiv.org/pdf/1812.04948.pdf](https://arxiv.org/pdf/1812.04948.pdf) | 2018 | **Not started** |
+| [Denoising Diffusion Probabilistic Models](src/ddpm) | [https://arxiv.org/pdf/2006.11239.pdf](https://arxiv.org/pdf/2006.11239.pdf) | 2020 | **In progress** |
+| [Vector-quantized Image Modeling with Improved VQGAN](src/vim) | [https://arxiv.org/pdf/2110.04627.pdf](https://arxiv.org/pdf/2110.04627.pdf) | 2021 | **Not started** |
+| [RePaint: Inpainting using Denoising Diffusion Probabilistic Models](src/repaint) | [https://arxiv.org/pdf/2201.09865.pdf](https://arxiv.org/pdf/2201.09865.pdf) | 2022 | **Not started** |
 
