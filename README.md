@@ -8,7 +8,7 @@ Below an illustration of generative models taxonomy from [lilianweng](https://li
 
 ## Models
 | Source code | arXiv | Year | Status |
-|---    |:-:    |:-:    |:-:    |:-:    |
+|---    |:-:    |:-:    |:-:    |
 | [Wasserstein GAN](src/wasserstein_gan) | [https://arxiv.org/pdf/1701.07875.pdf](https://arxiv.org/pdf/1701.07875.pdf) | 2017 | **Not started** |
 | [A Style-Based Generator Architecture for Generative Adversarial Networks](src/stylegan) | [https://arxiv.org/pdf/1812.04948.pdf](https://arxiv.org/pdf/1812.04948.pdf) | 2018 | **Not started** |
 | [Denoising Diffusion Probabilistic Models](src/ddpm) | [https://arxiv.org/pdf/2006.11239.pdf](https://arxiv.org/pdf/2006.11239.pdf) | 2020 | **In progress** |
