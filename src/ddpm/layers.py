@@ -10,7 +10,7 @@ import tensorflow_addons as tfa
 from utils import clone_initializer
 
 
-# TODO: Review ConvBlock & ResidualConv (groupnorm, output projection) for channels_first
+# TODO: Review groupnorm for ConvBlock & ResidualConv for channels_first
 
 
 def PositionEmbedding(embed_dim: int):
@@ -354,9 +354,16 @@ class ResidualBlock(tf.keras.layers.Layer):
                     ),
                 )
             else:
+                if self.data_format == "channels_last":
+                    equation = "abcd,de->abce"
+                    output_shape = (None, None, self.output_channel)
+                else:
+                    equation = "abcd,be->aecd"
+                    output_shape = (self.output_channel, None, None)
+
                 self.output_projection = tf.keras.layers.experimental.EinsumDense(
-                    "abcd,de->abce",
-                    output_shape=(None, None, self.output_channel),
+                    equation,
+                    output_shape=output_shape,
                     bias_axes="e",
                     kernel_initializer=tf.keras.initializers.VarianceScaling(
                         scale=1.0, mode="fan_avg", distribution="uniform"
@@ -376,8 +383,6 @@ class ResidualBlock(tf.keras.layers.Layer):
         h = self.conv_block2(x, training=training)
 
         if self.output_projection is not None:
-            if self.data_format == "channels_first" and not self.conv_shortcut:
-                x = tf.einsum("abcd->adbc", x)
             x = self.output_projection(x)
 
         return x + h

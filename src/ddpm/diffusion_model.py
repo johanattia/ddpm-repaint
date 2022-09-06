@@ -30,12 +30,10 @@ class DiffusionModel(tf.keras.Model):
             loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
         )
 
-        if data_format is None:
-            data_format = "channels_last"
-        elif data_format not in [
-            "channels_last",
-            "channels_first",
-        ]:
+        if data_format not in ["channels_last", "channels_first"]:
+            if data_format is None:
+                data_format = "channels_last"
+        else:
             raise ValueError(
                 """`data_format` must value `channels_last` or `channels_first`. 
                 Default behavior to `channels_last`.
@@ -46,11 +44,15 @@ class DiffusionModel(tf.keras.Model):
         self.maxstep = maxstep
         self.beta_min = beta_min
         self.beta_max = beta_max
+
         self._beta_schedule = tf.linspace(
             start=self.beta_min, stop=self.beta_max, num=self.maxstep
         )
         self._alpha_schedule = 1.0 - self._beta_schedule
         self._alpha_bar_schedule = tf.math.cumprod(self._alpha_schedule)
+
+    def get_beta_step(self, steps: tf.Tensor) -> tf.Tensor:
+        return tf.gather(params=self._beta_schedule, indices=steps)
 
     def get_alpha_step(self, steps: tf.Tensor) -> tf.Tensor:
         return tf.gather(params=self._alpha_schedule, indices=steps)
@@ -58,13 +60,10 @@ class DiffusionModel(tf.keras.Model):
     def get_alpha_bar_step(self, steps: tf.Tensor) -> tf.Tensor:
         return tf.gather(params=self._alpha_bar_schedule, indices=steps)
 
-    def get_beta_step(self, steps: tf.Tensor) -> tf.Tensor:
-        return tf.gather(params=self._beta_schedule, indices=steps)
-
     def train_step(
         self, data: Union[tf.Tensor, Iterable[tf.Tensor]]
     ) -> Dict[str, tf.Tensor]:
-        # Input with shape (B, H, W, C)
+        # Input with shape (B, H, W, C) or (B, C, H, W)
         x, _, sample_weight = tf.keras.utils.unpack_x_y_sample_weight(data)
         batch_size = tf.shape(x)[0]
 
@@ -124,7 +123,6 @@ class DiffusionModel(tf.keras.Model):
 
             progbar.update(step, finalize=False)
             step.assign_add(1)
-
         progbar.update(step, finalize=True)
 
         return x
