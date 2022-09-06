@@ -59,7 +59,7 @@ class DiffusionSynthesisCallback(tf.keras.callbacks.Callback):
                     input_shape = get_input_shape(tf.shape(images))
                 else:
                     raise ValueError(
-                        "Either `images` or `input_shape` must be non-empty valid tensors."
+                        "Either `images` or `input_shape` must be non-empty valid values."
                     )
             else:
                 input_shape = get_input_shape(input_shape)
