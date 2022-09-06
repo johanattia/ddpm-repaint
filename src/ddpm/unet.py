@@ -2,6 +2,7 @@
 
 from typing import Tuple
 import tensorflow as tf
+
 from .diffusion_model import DiffusionModel
 
 

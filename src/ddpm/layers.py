@@ -1,6 +1,7 @@
 """U-Net layers"""
 
 
+from tokenize import group
 from typing import Callable, Dict, Tuple, Union
 from matplotlib import units
 
@@ -204,6 +205,7 @@ class ConvBlock(tf.keras.layers.Layer):
         dilation_rate: Tuple[int] = (1, 1),
         use_bias: bool = True,
         dropout: float = 0.2,
+        groups: int = 32,
         init_scale: float = 1.0,
         **kwargs,
     ):
@@ -216,6 +218,7 @@ class ConvBlock(tf.keras.layers.Layer):
         self.dilation_rate = dilation_rate
         self.use_bias = use_bias
         self._dropout = dropout
+        self.groups = groups
         self._init_scale = init_scale
 
     def build(self, input_shape: tf.TensorShape):
@@ -228,9 +231,20 @@ class ConvBlock(tf.keras.layers.Layer):
             )
 
         if self.data_format == "channels_last":  # (B, H, W, C)
-            channels = input_shape[-1]
+            channels_axis = -1
         else:  # (B, C, H, W)
-            channels = input_shape[1]
+            channels_axis = 1
+        channels = input_shape[channels_axis]
+
+        if channels % self.groups != 0:
+            raise ValueError(
+                f"""Normalization `groups` must divide input channels. Received groups={self.groups}.
+                while channels={channels}.
+                """
+            )
+        self.group_norm = tfa.layers.GroupNormalization(
+            groups=self.groups, axis=channels_axis
+        )
 
         if self.filters is None:
             self.filters = channels
@@ -250,13 +264,12 @@ class ConvBlock(tf.keras.layers.Layer):
                 scale=self._init_scale, mode="fan_avg", distribution="uniform"
             ),
         )
-        self.normalize = tfa.layers.GroupNormalization()
         super().build(input_shape)
 
     def call(
         self, inputs: tfa.types.FloatTensorLike, training: bool = None
     ) -> tf.Tensor:
-        x = tf.nn.silu(self.normalize(inputs))
+        x = tf.nn.silu(self.group_norm(inputs))
 
         if self._dropout:
             x = self.dropout(x, training=training)
@@ -274,6 +287,7 @@ class ConvBlock(tf.keras.layers.Layer):
                 "dilation_rate": self.dilation_rate,
                 "use_bias": self.use_bias,
                 "dropout": self._dropout,
+                "groups": self.groups,
                 "init_scale": self._init_scale,
             }
         )
@@ -404,4 +418,18 @@ class ResidualBlock(tf.keras.layers.Layer):
 
 
 class AttentionBlock(tf.keras.layers.Layer):
-    pass
+    def __init__(
+        self,
+        **kwargs,
+    ):
+        self.name = kwargs.pop("name", "AttentionBlock")
+        super().__init__(**kwargs)
+
+    def build(self, input_shape: tf.TensorShape):
+        raise NotImplementedError
+
+    def call(self, inputs: tfa.types.FloatTensorLike, training: bool = None):
+        raise NotImplementedError
+
+    def get_config(self) -> Dict:
+        raise NotImplementedError
