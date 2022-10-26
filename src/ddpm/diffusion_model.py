@@ -52,12 +52,15 @@ class DiffusionModel(tf.keras.Model):
         self._alpha_bar_schedule = tf.math.cumprod(self._alpha_schedule)
 
     def get_beta_step(self, steps: tf.Tensor) -> tf.Tensor:
+        """_summary_"""
         return tf.gather(params=self._beta_schedule, indices=steps)
 
     def get_alpha_step(self, steps: tf.Tensor) -> tf.Tensor:
+        """_summary_"""
         return tf.gather(params=self._alpha_schedule, indices=steps)
 
     def get_alpha_bar_step(self, steps: tf.Tensor) -> tf.Tensor:
+        """_summary_"""
         return tf.gather(params=self._alpha_bar_schedule, indices=steps)
 
     def train_step(
@@ -93,36 +96,63 @@ class DiffusionModel(tf.keras.Model):
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
         return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
 
-    def sampling(self, sampling_size: int = 32, verbose: int = 1) -> tf.Tensor:
-        # Gaussian noise as diffusion input
+    def _step_sampling(self, noise: tf.Tensor, step: int) -> tf.Tensor:
+        """_summary_
+
+        Args:
+            noise (tf.Tensor): _description_
+            step (int): _description_
+
+        Returns:
+            tf.Tensor: _description_
+        """
+        sampling_size = tf.shape(noise)[0]
+        z = (
+            self.gaussian_dist.sample(sampling_size)
+            if step > 1
+            else tf.zeros([sampling_size, self.flattened_shape])
+        )
+        z = tf.reshape(z, [sampling_size] + self.input_shape)
+
+        steps = tf.expand_dims(tf.repeat(step, [sampling_size]), axis=1)
+
+        sigma = tf.math.sqrt(self.get_beta_step(steps))
+        alpha_steps = self.get_alpha_step(steps)
+        alpha_bar_steps = self.get_alpha_bar_step(steps)
+
+        const1 = 1.0 / tf.math.sqrt(alpha_steps)
+        const2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_bar_steps)
+
+        input_tuple = (noise, steps)
+        noise = (
+            const1 * (noise - const2 * self(input_tuple, training=False)) + sigma * z
+        )
+        return noise
+
+    def diffusion_sampling(
+        self, sampling_size: int = 32, verbose: int = 1
+    ) -> tf.Tensor:
+        """_summary_
+
+        Args:
+            sampling_size (int, optional): _description_. Defaults to 32.
+            verbose (int, optional): _description_. Defaults to 1.
+
+        Returns:
+            tf.Tensor: _description_
+        """
         x = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
         x = tf.reshape(x, [sampling_size] + self.input_shape)  # (B, H, W, C)
 
         step = tf.Variable(0, dtype=tf.int32)
         progbar = tf.keras.utils.Progbar(target=self.maxstep, verbose=verbose)
 
-        # Diffusion sampling
         while step < self.maxstep:
-            z = (
-                self.gaussian_dist.sample(sampling_size)
-                if step > 1
-                else tf.zeros([sampling_size, self.flattened_shape])
-            )
-            z = tf.reshape(z, [sampling_size] + self.input_shape)
-
-            steps = tf.expand_dims(tf.repeat(step, [sampling_size]), axis=1)
-            sigma = tf.math.sqrt(self.get_beta_step(steps))
-            alpha_steps = self.get_alpha_step(steps)
-            alpha_bar_steps = self.get_alpha_bar_step(steps)
-
-            const1 = 1.0 / tf.math.sqrt(alpha_steps)
-            const2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_bar_steps)
-
-            input_tuple = (x, steps)
-            x = const1 * (x - const2 * self(input_tuple, training=False)) + sigma * z
+            x = self._step_sampling(noise=x, step=step)
 
             progbar.update(step, finalize=False)
             step.assign_add(1)
+
         progbar.update(step, finalize=True)
 
         return x
