@@ -1,24 +1,25 @@
 """U-Net layers"""
 
 
-from tokenize import group
 from typing import Callable, Dict, Tuple, Union
-from matplotlib import units
 
 import tensorflow as tf
+from tensorflow.keras import layers
+
 import tensorflow_addons as tfa
+from tensorflow_addons.types import FloatTensorLike, TensorLike
 
-from utils import clone_initializer
 
-
-# TODO: Review groupnorm for ConvBlock & ResidualConv for channels_first
+# TODO:
+# Review groupnorm for ConvBlock & ResidualConv for channels_first
+# Review layers input : image + embedding
 
 
 def PositionEmbedding(embed_dim: int):
     # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
     def _sinusoidal_embedding(
-        steps: tfa.types.TensorLike,
-    ) -> tfa.types.FloatTensorLike:
+        steps: TensorLike,
+    ) -> FloatTensorLike:
         # input shape: (B, 1)
         batch_size = tf.shape(steps)[0]
         if steps.shape != tf.TensorShape([batch_size, 1]):
@@ -37,10 +38,10 @@ def PositionEmbedding(embed_dim: int):
 
         return step_embed  # output shape: (B, embed_dim)
 
-    return tf.keras.layers.Lambda(_sinusoidal_embedding)
+    return layers.Lambda(_sinusoidal_embedding)
 
 
-class CELU(tf.keras.layers.Layer):
+class CELU(layers.Layer):
     def __init__(self, alpha: float = 1.0, axis: int = -1, **kwargs):
         super().__init__(**kwargs)
         if axis is None:
@@ -50,10 +51,10 @@ class CELU(tf.keras.layers.Layer):
         self._axis = axis
         self._alpha = float(alpha)
 
-        self.elu = tf.keras.layers.Elu(alpha=self._alpha)
-        self.concat = tf.keras.layers.Concatenate(axis=self._axis)
+        self.elu = layers.Elu(alpha=self._alpha)
+        self.concat = layers.Concatenate(axis=self._axis)
 
-    def call(self, inputs: tfa.types.FloatTensorLike) -> tfa.types.FloatTensorLike:
+    def call(self, inputs: FloatTensorLike) -> FloatTensorLike:
         return self.elu(self.concat([inputs, -inputs]))
 
     def get_config(self) -> Dict:
@@ -62,7 +63,7 @@ class CELU(tf.keras.layers.Layer):
         return config
 
 
-class Upsample(tf.keras.layers.Layer):
+class Upsample(layers.Layer):
     def __init__(
         self, data_format: str = "channels_last", use_conv: bool = True, **kwargs
     ):
@@ -78,7 +79,7 @@ class Upsample(tf.keras.layers.Layer):
                 Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
                 """
             )
-        self.upsample = tf.keras.layers.UpSampling2D(
+        self.upsample = layers.UpSampling2D(
             size=(2, 2),
             data_format=self.data_format,
             interpolation="nearest",
@@ -90,7 +91,7 @@ class Upsample(tf.keras.layers.Layer):
             else:  # (B, C, H, W)
                 channels = input_shape[1]
 
-            self.conv = tf.keras.layers.Conv2D(
+            self.conv = layers.Conv2D(
                 filters=channels,
                 kernel_size=(3, 3),
                 strides=(1, 1),
@@ -104,7 +105,7 @@ class Upsample(tf.keras.layers.Layer):
             )
         super().build(input_shape)
 
-    def call(self, inputs: tfa.dtypes.FloatTensorLike):
+    def call(self, inputs: FloatTensorLike):
         x = self.upsample(inputs)
 
         if self._use_conv:
@@ -115,7 +116,7 @@ class Upsample(tf.keras.layers.Layer):
 
 def downsample_pool(data_format: str = "channels_last", channels: int = None):
     del channels
-    return tf.keras.layers.AveragePooling2D(
+    return layers.AveragePooling2D(
         pool_size=(2, 2),
         strides=(2, 2),
         data_format=data_format,
@@ -123,7 +124,7 @@ def downsample_pool(data_format: str = "channels_last", channels: int = None):
 
 
 def downsample_conv(data_format: str = "channels_last", channels: int = 3):
-    return tf.keras.layers.Conv2D(
+    return layers.Conv2D(
         filters=channels,
         kernel_size=(3, 3),
         strides=(2, 2),
@@ -140,12 +141,12 @@ def downsample_conv(data_format: str = "channels_last", channels: int = 3):
 def downsample_pool_and_conv(data_format: str = "channels_last", channels: int = 3):
     return tf.keras.Sequential(
         [
-            tf.keras.layers.AveragePooling2D(
+            layers.AveragePooling2D(
                 pool_size=(2, 2),
                 strides=(2, 2),
                 data_format=data_format,
             ),
-            tf.keras.layers.Conv2D(
+            layers.Conv2D(
                 filters=channels,
                 kernel_size=(3, 3),
                 strides=(1, 1),
@@ -161,10 +162,10 @@ def downsample_pool_and_conv(data_format: str = "channels_last", channels: int =
     )
 
 
-class Downsample(tf.keras.layers.Layer):
+class Downsample(layers.Layer):
     def __init__(
         self,
-        downsample_fn: Callable[[str, int], tf.keras.layers.Layer],
+        downsample_fn: Callable[[str, int], layers.Layer],
         data_format: str = "channels_last",
         **kwargs,
     ):
@@ -191,11 +192,11 @@ class Downsample(tf.keras.layers.Layer):
         )
         super().build(input_shape)
 
-    def call(self, inputs: tfa.dtypes.FloatTensorLike):
+    def call(self, inputs: FloatTensorLike):
         return self.downsample(inputs)
 
 
-class ConvBlock(tf.keras.layers.Layer):
+class ConvBlock(layers.Layer):
     def __init__(
         self,
         filters: int = None,
@@ -250,9 +251,9 @@ class ConvBlock(tf.keras.layers.Layer):
             self.filters = channels
 
         if self._dropout:
-            self.dropout = tf.keras.layers.Dropout(rate=self._dropout)
+            self.dropout = layers.Dropout(rate=self._dropout)
 
-        self.conv = tf.keras.layers.Conv2D(
+        self.conv = layers.Conv2D(
             filters=self.filters,
             kernel_size=self.kernel_size,
             strides=self.strides,
@@ -266,9 +267,7 @@ class ConvBlock(tf.keras.layers.Layer):
         )
         super().build(input_shape)
 
-    def call(
-        self, inputs: tfa.types.FloatTensorLike, training: bool = None
-    ) -> tf.Tensor:
+    def call(self, inputs: FloatTensorLike, training: bool = None) -> tf.Tensor:
         x = tf.nn.silu(self.group_norm(inputs))
 
         if self._dropout:
@@ -294,7 +293,7 @@ class ConvBlock(tf.keras.layers.Layer):
         return config
 
 
-class ResidualBlock(tf.keras.layers.Layer):
+class ResidualBlock(layers.Layer):
     def __init__(
         self,
         output_channel: int = None,
@@ -344,7 +343,7 @@ class ResidualBlock(tf.keras.layers.Layer):
             dropout=self.dropout,
             init_scale=1e-10,
         )
-        self.dense = tf.keras.layers.Dense(
+        self.dense = layers.Dense(
             units=self.output_channel,
             use_bias=True,
             kernel_initializer=tf.keras.initializers.VarianceScaling(
@@ -355,7 +354,7 @@ class ResidualBlock(tf.keras.layers.Layer):
         self.output_projection = None
         if self.output_channel != channels:
             if self.conv_shortcut:
-                self.output_projection = tf.keras.layers.Conv2D(
+                self.output_projection = layers.Conv2D(
                     filters=self.output_channel,
                     kernel_size=self.kernel_size,
                     strides=self.strides,
@@ -375,7 +374,7 @@ class ResidualBlock(tf.keras.layers.Layer):
                     equation = "abcd,be->aecd"
                     output_shape = (self.output_channel, None, None)
 
-                self.output_projection = tf.keras.layers.experimental.EinsumDense(
+                self.output_projection = layers.experimental.EinsumDense(
                     equation,
                     output_shape=output_shape,
                     bias_axes="e",
@@ -387,7 +386,7 @@ class ResidualBlock(tf.keras.layers.Layer):
 
     def call(
         self,
-        inputs: Tuple[tfa.types.FloatTensorLike, tfa.types.TensorLike],
+        inputs: Tuple[FloatTensorLike, TensorLike],
         training: bool = None,
     ) -> tf.Tensor:
         x, step_embed = inputs
@@ -417,18 +416,63 @@ class ResidualBlock(tf.keras.layers.Layer):
         return config
 
 
-class AttentionBlock(tf.keras.layers.Layer):
+class AttentionBlock(layers.Layer):
     def __init__(
         self,
+        attention_channel: int = None,
+        data_format: str = "channels_last",
         **kwargs,
     ):
         self.name = kwargs.pop("name", "AttentionBlock")
         super().__init__(**kwargs)
+        self.attention_channel = attention_channel
+        self.data_format = data_format
 
     def build(self, input_shape: tf.TensorShape):
-        raise NotImplementedError
+        input_shape = tf.TensorShape(input_shape)
+        if len(input_shape) != 4:
+            raise ValueError(
+                f"""Input of a `ConvBlock` layer should correspond to a batch of images.
+                Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
+                """
+            )
 
-    def call(self, inputs: tfa.types.FloatTensorLike, training: bool = None):
+        if self.data_format == "channels_last":  # (B, H, W, C)
+            channels_axis = -1
+        else:  # (B, C, H, W)
+            channels_axis = 1
+        channels = input_shape[channels_axis]
+
+        if self.attention_channel is None:
+            self.attention_channel = channels
+
+        self.group_norm = ""
+
+        equation = ""
+        output_shape = ()
+        self.attention_projection = layers.experimental.EinsumDense(
+            equation,
+            output_shape=output_shape,
+            bias_axes="e",
+            kernel_initializer=tf.keras.initializers.VarianceScaling(
+                scale=1.0, mode="fan_avg", distribution="uniform"
+            ),
+        )
+
+    def call(self, inputs: FloatTensorLike, training: bool = None):
+        if self.data_format == "channels_first":
+            inputs = tf.einsum("abcd->adbc", inputs)
+
+        x = self.attention_projection(self.group_norm(inputs))  # (B, H, W, C, 3)
+        query, key, value = tf.unstack(x, axis=-1)  # 3 * (B, H, W, C)
+
+        weights = tf.einsum("abcd,aefd->abcef", query, key) * (
+            int(self.attention_channel) ** (-0.5)
+        )
+        # weights = tf.reshape(weights, [B, H, W, H * W])
+        # weights = tf.nn.softmax(weights, axis=-1)
+        # weights = tf.reshape(weights, [B, H, W, H, W])
+
         raise NotImplementedError
 
     def get_config(self) -> Dict:
