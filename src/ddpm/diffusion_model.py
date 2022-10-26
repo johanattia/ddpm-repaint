@@ -52,15 +52,12 @@ class DiffusionModel(tf.keras.Model):
         self._alpha_bar_schedule = tf.math.cumprod(self._alpha_schedule)
 
     def get_beta_step(self, steps: tf.Tensor) -> tf.Tensor:
-        """_summary_"""
         return tf.gather(params=self._beta_schedule, indices=steps)
 
     def get_alpha_step(self, steps: tf.Tensor) -> tf.Tensor:
-        """_summary_"""
         return tf.gather(params=self._alpha_schedule, indices=steps)
 
     def get_alpha_bar_step(self, steps: tf.Tensor) -> tf.Tensor:
-        """_summary_"""
         return tf.gather(params=self._alpha_bar_schedule, indices=steps)
 
     def train_step(
@@ -97,7 +94,7 @@ class DiffusionModel(tf.keras.Model):
         return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
 
     def _denoising_step(self, noise: tf.Tensor, step: int) -> tf.Tensor:
-        """_summary_
+        """Denoising step.
 
         Args:
             noise (tf.Tensor): _description_
@@ -132,7 +129,7 @@ class DiffusionModel(tf.keras.Model):
     def diffusion_sampling(
         self, sampling_size: int = 32, verbose: int = 1
     ) -> tf.Tensor:
-        """_summary_
+        """Sequential sampling procedure.
 
         Args:
             sampling_size (int, optional): _description_. Defaults to 32.
@@ -142,8 +139,8 @@ class DiffusionModel(tf.keras.Model):
             tf.Tensor: _description_
         """
         # Sample gaussian noise
-        x = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
-        x = tf.reshape(x, [sampling_size] + self.input_shape)  # (B, H, W, C)
+        noise = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
+        noise = tf.reshape(noise, [sampling_size] + self.input_shape)  # (B, H, W, C)
 
         # Initialize step and progress bar
         step = tf.Variable(0, dtype=tf.int32)
@@ -152,13 +149,13 @@ class DiffusionModel(tf.keras.Model):
         # Diffusion sampling with sequential denoising
         # TODO: compare performances and syntax with tf.while_loop
         while step < self.maxstep:
-            x = self._denoising_step(noise=x, step=step)
+            noise = self._denoising_step(noise=noise, step=step)
             progbar.update(step, finalize=False)
             step.assign_add(1)
 
         # Progress bar finalization + output generated images
         progbar.update(step, finalize=True)
-        return x
+        return noise
 
     def interpolate(self):
         # Reference:https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/diffusion_utils.py#L258-L299
