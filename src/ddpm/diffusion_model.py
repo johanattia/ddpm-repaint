@@ -96,7 +96,7 @@ class DiffusionModel(tf.keras.Model):
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
         return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
 
-    def _step_sampling(self, noise: tf.Tensor, step: int) -> tf.Tensor:
+    def _denoising_step(self, noise: tf.Tensor, step: int) -> tf.Tensor:
         """_summary_
 
         Args:
@@ -141,20 +141,23 @@ class DiffusionModel(tf.keras.Model):
         Returns:
             tf.Tensor: _description_
         """
+        # Sample gaussian noise
         x = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
         x = tf.reshape(x, [sampling_size] + self.input_shape)  # (B, H, W, C)
 
+        # Initialize step and progress bar
         step = tf.Variable(0, dtype=tf.int32)
         progbar = tf.keras.utils.Progbar(target=self.maxstep, verbose=verbose)
 
+        # Diffusion sampling with sequential denoising
+        # TODO: compare performances and syntax with tf.while_loop
         while step < self.maxstep:
-            x = self._step_sampling(noise=x, step=step)
-
+            x = self._denoising_step(noise=x, step=step)
             progbar.update(step, finalize=False)
             step.assign_add(1)
 
+        # Progress bar finalization + output generated images
         progbar.update(step, finalize=True)
-
         return x
 
     def interpolate(self):
