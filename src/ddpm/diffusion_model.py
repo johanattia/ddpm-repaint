@@ -6,7 +6,7 @@ from typing import Dict, Iterable, Union
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from .utils import get_input_shape
+from utils import get_input_shape
 
 
 tfd = tfp.distributions
@@ -103,6 +103,7 @@ class DiffusionModel(tf.keras.Model):
         Returns:
             tf.Tensor: _description_
         """
+        # Sample gaussian noise
         sampling_size = tf.shape(noise)[0]
         z = (
             self.gaussian_dist.sample(sampling_size)
@@ -111,6 +112,7 @@ class DiffusionModel(tf.keras.Model):
         )
         z = tf.reshape(z, [sampling_size] + self.input_shape)
 
+        # Ste formating + get diffusion schedules
         steps = tf.expand_dims(tf.repeat(step, [sampling_size]), axis=1)
 
         sigma = tf.math.sqrt(self.get_beta_step(steps))
@@ -120,6 +122,7 @@ class DiffusionModel(tf.keras.Model):
         const1 = 1.0 / tf.math.sqrt(alpha_steps)
         const2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_bar_steps)
 
+        # Denoising step transformation
         input_tuple = (noise, steps)
         noise = (
             const1 * (noise - const2 * self(input_tuple, training=False)) + sigma * z
