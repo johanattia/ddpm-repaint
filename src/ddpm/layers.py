@@ -386,11 +386,10 @@ class ResidualBlock(layers.Layer):
 
     def call(
         self,
-        inputs: Tuple[FloatTensorLike, TensorLike],
+        inputs: Tuple[FloatTensorLike, TensorLike],  # Dict[str, TensorLike]
         training: bool = None,
     ) -> tf.Tensor:
-        x, step_embed = inputs
-
+        x, step_embed = inputs  # x, step_embed = inputs["image"], inputs["step"]
         h = self.conv_block1(x)
         h += self.dense(tf.nn.silu(step_embed))[:, tf.newaxis, tf.newaxis, :]
         h = self.conv_block2(x, training=training)
@@ -421,18 +420,22 @@ class AttentionBlock(layers.Layer):
         self,
         attention_channel: int = None,
         data_format: str = "channels_last",
+        groups: int = 32,
         **kwargs,
     ):
         self.name = kwargs.pop("name", "AttentionBlock")
         super().__init__(**kwargs)
         self.attention_channel = attention_channel
         self.data_format = data_format
+        self.groups = groups
+        self.attention_equation = None
+        self.attention_output_equation = None
 
     def build(self, input_shape: tf.TensorShape):
         input_shape = tf.TensorShape(input_shape)
         if len(input_shape) != 4:
             raise ValueError(
-                f"""Input of a `ConvBlock` layer should correspond to a batch of images.
+                f"""Input of an `AttentionBlock` layer should correspond to a batch of images.
                 Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
                 """
             )
@@ -446,34 +449,91 @@ class AttentionBlock(layers.Layer):
         if self.attention_channel is None:
             self.attention_channel = channels
 
-        self.group_norm = ""
+        # Layers definition
+        self.group_norm = tfa.layers.GroupNormalization(
+            groups=self.groups, axis=channels_axis
+        )
 
-        equation = ""
-        output_shape = ()
+        if self.data_format == "channels_last":
+            projection_equation = "bhwc,cae->bhwae"
+            projection_shape = (None, None, self.attention_channel, 3)
+
+            self.attention_equation = "bhwc,btlc->bhwtl"
+            self.attention_output_equation = "bhwtl,btlc->bhwc"
+
+            output_equation = "bhwc,cd->bhwd"
+            output_shape = (None, None, channels)
+        else:
+            projection_equation = "bchw,cae->bahwe"
+            projection_shape = (self.attention_channel, None, None, 3)
+
+            self.attention_equation = "bchw,bctl->bhwtl"
+            self.attention_output_equation = "bhwtl,bctl->bchw"
+
+            output_equation = "bchw,cd->bdhw"
+            output_shape = (channels, None, None)
+
         self.attention_projection = layers.experimental.EinsumDense(
-            equation,
-            output_shape=output_shape,
-            bias_axes="e",
+            projection_equation,
+            output_shape=projection_shape,
+            bias_axes="ae",
             kernel_initializer=tf.keras.initializers.VarianceScaling(
                 scale=1.0, mode="fan_avg", distribution="uniform"
             ),
         )
+        self.output_dense = layers.experimental.EinsumDense(
+            output_equation,
+            output_shape=output_shape,
+            bias_axes="d",
+            kernel_initializer=tf.keras.initializers.VarianceScaling(
+                scale=1.0, mode="fan_avg", distribution="uniform"
+            ),
+        )
+        super().build(input_shape)
 
     def call(self, inputs: FloatTensorLike, training: bool = None):
-        if self.data_format == "channels_first":
-            inputs = tf.einsum("abcd->adbc", inputs)
+        attention_tensors = self.attention_projection(
+            self.group_norm(inputs)
+        )  # (B, H, W, C, 3) or (B, C, H, W, 3)
+        query, key, value = tf.unstack(
+            attention_tensors, axis=-1
+        )  # 3 * (B, H, W, C) or (B, C, H, W)
 
-        x = self.attention_projection(self.group_norm(inputs))  # (B, H, W, C, 3)
-        query, key, value = tf.unstack(x, axis=-1)  # 3 * (B, H, W, C)
-
-        weights = tf.einsum("abcd,aefd->abcef", query, key) * (
+        attention_weights = tf.einsum(self.attention_equation, query, key) * (
             int(self.attention_channel) ** (-0.5)
         )
-        # weights = tf.reshape(weights, [B, H, W, H * W])
-        # weights = tf.nn.softmax(weights, axis=-1)
-        # weights = tf.reshape(weights, [B, H, W, H, W])
+        batch, height, width = self._get_batch_shapes(inputs)
+        attention_weights = tf.reshape(
+            attention_weights, [batch, height, width, height * width]
+        )
+        attention_weights = tf.nn.softmax(attention_weights, axis=-1)
+        attention_weights = tf.reshape(
+            attention_weights, [batch, height, width, height, width]
+        )
 
-        raise NotImplementedError
+        attention_output = tf.einsum(
+            self.attention_output_equation, attention_weights, value
+        )  # (B, H, W, C) or (B, C, H, W)
+        attention_output = self.output_dense(attention_output)
+        output = inputs + attention_output
+
+        return output
+
+    def _get_batch_shapes(self, inputs: FloatTensorLike) -> Tuple[int]:
+        input_shape = tf.shape(inputs)
+        if self.data_format == "channels_last":
+            batch, height, width = input_shape[0], input_shape[1], input_shape[2]
+        else:
+            batch, height, width = input_shape[0], input_shape[2], input_shape[3]
+        return batch, height, width
 
     def get_config(self) -> Dict:
-        raise NotImplementedError
+        config = super().get_config()
+        config.update(
+            {
+                "attention_channel": self.attention_channel,
+                "data_format": self.data_format,
+                "groups": self.groups,
+            }
+        )
+        raise config
