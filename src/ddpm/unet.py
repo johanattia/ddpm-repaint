@@ -3,7 +3,7 @@
 from typing import Tuple
 import tensorflow as tf
 
-from .diffusion_model import DiffusionModel
+from diffusion_model import DiffusionModel
 
 
 class DiffusionUNet(DiffusionModel):

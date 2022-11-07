@@ -6,7 +6,7 @@ Reference: https://keras.io/examples/generative/gaugan/#gan-monitor-callback
 import matplotlib.pyplot as plt
 import tensorflow as tf
 
-from .utils import get_input_shape
+from utils import get_input_shape
 
 
 class DiffusionSynthesisCallback(tf.keras.callbacks.Callback):
