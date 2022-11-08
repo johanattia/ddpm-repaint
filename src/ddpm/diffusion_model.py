@@ -6,7 +6,7 @@ from typing import Dict, Iterable, Union
 import tensorflow as tf
 import tensorflow_probability as tfp
 
-from utils import get_input_shape
+from .utils import get_input_shape
 
 
 tfd = tfp.distributions
