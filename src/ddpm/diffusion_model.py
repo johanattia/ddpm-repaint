@@ -4,13 +4,14 @@
 from typing import Dict, Iterable, Union
 
 import tensorflow as tf
-import tensorflow_probability as tfp
+
+# import tensorflow_probability as tfp
 
 from .utils import get_input_shape
 
 
-tfd = tfp.distributions
-flatten = tf.keras.layers.Flatten()
+# tfd = tfp.distributions
+# flatten = tf.keras.layers.Flatten()
 
 
 class DiffusionModel(tf.keras.Model):
@@ -25,10 +26,10 @@ class DiffusionModel(tf.keras.Model):
     ):
         super().__init__(**kwargs)
         self.input_shape = get_input_shape(input_shape)  # (H, W, C) or (C, H, W)
-        self.flattened_shape = tf.reduce_prod(self.input_shape)
-        self.gaussian_dist = tfd.MultivariateNormalDiag(
-            loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
-        )
+        # self.flattened_shape = tf.reduce_prod(self.input_shape)
+        # self.gaussian_dist = tfd.MultivariateNormalDiag(
+        #    loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
+        # )
 
         if data_format not in ["channels_last", "channels_first"]:
             if data_format is None:
@@ -70,22 +71,23 @@ class DiffusionModel(tf.keras.Model):
         if tf.shape(x) != [batch_size] + self.input_shape:
             raise ValueError(f"Input must have shape {self.input_shape}")
 
-        # Gaussian noise sampling (B, H * W * C) => (B, H, W, C)
-        eps_target = self.gaussian_dist.sample(batch_size)
-        eps = tf.reshape(eps_target, shape=[batch_size] + self.input_shape)
+        # Gaussian noise sampling (B, H, W, C)
+        eps_target = tf.random.normal([batch_size] + self.input_shape)
+        # eps_target = self.gaussian_dist.sample(batch_size)
+        # eps = tf.reshape(eps_target, shape=[batch_size] + self.input_shape)
 
         # Prepare forward input (B, H, W, C)
         steps = tf.random.uniform(
             shape=[batch_size, 1], minval=1, maxval=self.maxstep, dtype=tf.int32
         )  # (B, 1)
         alpha = self.get_alpha_bar_step(steps)  # (B, 1)
-        input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * eps
+        input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * eps_target
 
         input_tuple = (input, steps)
 
         with tf.GradientTape() as tape:
             # Run forward pass.
-            eps_pred = flatten(self(input_tuple, training=True))  # (B, H * W * C)
+            eps_pred = self(input_tuple, training=True)  # (B, H, W, C)
             loss = self.compute_loss(input_tuple, eps_target, eps_pred, sample_weight)
         self._validate_target_and_loss(eps_target, loss)
 
@@ -106,11 +108,10 @@ class DiffusionModel(tf.keras.Model):
         # Sample gaussian noise
         sampling_size = tf.shape(noise)[0]
         z = (
-            self.gaussian_dist.sample(sampling_size)
+            tf.random.normal([sampling_size] + self.input_shape)
             if step > 1
-            else tf.zeros([sampling_size, self.flattened_shape])
+            else tf.zeros([sampling_size] + self.input_shape)
         )
-        z = tf.reshape(z, [sampling_size] + self.input_shape)
 
         # Ste formating + get diffusion schedules
         steps = tf.expand_dims(tf.repeat(step, [sampling_size]), axis=1)
@@ -142,8 +143,9 @@ class DiffusionModel(tf.keras.Model):
             tf.Tensor: _description_
         """
         # Sample gaussian noise
-        noise = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
-        noise = tf.reshape(noise, [sampling_size] + self.input_shape)  # (B, H, W, C)
+        # noise = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
+        # noise = tf.reshape(noise, [sampling_size] + self.input_shape)  # (B, H, W, C)
+        noise = tf.random.normal([sampling_size] + self.input_shape)
 
         # Initialize step and progress bar
         step = tf.Variable(0, dtype=tf.int32)
