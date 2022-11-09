@@ -58,6 +58,11 @@ class DiffusionModel(tf.keras.Model):
     def get_alpha_bar_step(self, steps: tf.Tensor) -> tf.Tensor:
         return tf.gather(params=self._alpha_bar_schedule, indices=steps)
 
+    def call(self, inputs: ImageStepDict, training: bool = True):
+        raise NotImplementedError(
+            """Forward method `call` must be implemended in child class."""
+        )
+
     def train_step(
         self, data: Union[tf.Tensor, Iterable[tf.Tensor]]
     ) -> Dict[str, tf.Tensor]:
