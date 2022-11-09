@@ -130,6 +130,7 @@ class DiffusionModel(tf.keras.Model):
         # input_tuple = (noise, steps)
         input_dict: ImageStepDict = {"image": noise, "step": steps}
         noise = const1 * (noise - const2 * self(input_dict, training=False)) + sigma * z
+
         return noise
 
     def diffusion_sampling(
