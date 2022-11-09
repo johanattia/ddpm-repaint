@@ -7,7 +7,7 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 import tensorflow_addons as tfa
-from tensorflow_addons.types import FloatTensorLike, TensorLike
+from tensorflow_addons import types # import FloatTensorLike, TensorLike
 
 
 # TODO:
@@ -18,8 +18,8 @@ from tensorflow_addons.types import FloatTensorLike, TensorLike
 def PositionEmbedding(embed_dim: int):
     # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
     def _sinusoidal_embedding(
-        steps: TensorLike,
-    ) -> FloatTensorLike:
+        steps: types.TensorLike,
+    ) -> types.FloatTensorLike:
         # input shape: (B, 1)
         batch_size = tf.shape(steps)[0]
         if steps.shape != tf.TensorShape([batch_size, 1]):
@@ -54,7 +54,7 @@ class CELU(layers.Layer):
         self.elu = layers.Elu(alpha=self._alpha)
         self.concat = layers.Concatenate(axis=self._axis)
 
-    def call(self, inputs: FloatTensorLike) -> FloatTensorLike:
+    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
         return self.elu(self.concat([inputs, -inputs]))
 
     def get_config(self) -> Dict:
@@ -105,7 +105,7 @@ class Upsample(layers.Layer):
             )
         super().build(input_shape)
 
-    def call(self, inputs: FloatTensorLike):
+    def call(self, inputs: types.FloatTensorLike):
         x = self.upsample(inputs)
 
         if self._use_conv:
@@ -192,7 +192,7 @@ class Downsample(layers.Layer):
         )
         super().build(input_shape)
 
-    def call(self, inputs: FloatTensorLike):
+    def call(self, inputs: types.FloatTensorLike):
         return self.downsample(inputs)
 
 
@@ -267,7 +267,7 @@ class ConvBlock(layers.Layer):
         )
         super().build(input_shape)
 
-    def call(self, inputs: FloatTensorLike, training: bool = None) -> tf.Tensor:
+    def call(self, inputs: types.FloatTensorLike, training: bool = None) -> tf.Tensor:
         x = tf.nn.silu(self.group_norm(inputs))
 
         if self._dropout:
@@ -386,7 +386,7 @@ class ResidualBlock(layers.Layer):
 
     def call(
         self,
-        inputs: Tuple[FloatTensorLike, TensorLike],  # Dict[str, TensorLike]
+        inputs: Tuple[types.FloatTensorLike, types.TensorLike],  # Dict[str, TensorLike]
         training: bool = None,
     ) -> tf.Tensor:
         x, step_embed = inputs  # x, step_embed = inputs["image"], inputs["step"]
@@ -491,7 +491,7 @@ class AttentionBlock(layers.Layer):
         )
         super().build(input_shape)
 
-    def call(self, inputs: FloatTensorLike, training: bool = None):
+    def call(self, inputs: types.FloatTensorLike, training: bool = None):
         attention_tensors = self.attention_projection(
             self.group_norm(inputs)
         )  # (B, H, W, C, 3) or (B, C, H, W, 3)
@@ -519,7 +519,7 @@ class AttentionBlock(layers.Layer):
 
         return output
 
-    def _get_batch_shapes(self, inputs: FloatTensorLike) -> Tuple[int]:
+    def _get_batch_shapes(self, inputs: types.FloatTensorLike) -> Tuple[int]:
         input_shape = tf.shape(inputs)
         if self.data_format == "channels_last":
             batch, height, width = input_shape[0], input_shape[1], input_shape[2]

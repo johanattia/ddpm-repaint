@@ -1,10 +1,10 @@
 """U-Net Diffusion Model from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/models/unet.py"""
 
-from typing import Tuple
+from typing import Dict
 import tensorflow as tf
 
 from .diffusion_model import DiffusionModel
-from .utils import ImageStepDict
+# from .utils import ImageStepDict
 
 
 class DiffusionUNet(DiffusionModel):
@@ -13,5 +13,5 @@ class DiffusionUNet(DiffusionModel):
     ):
         super().__init__(input_shape, data_format, **kwargs)
 
-    def call(self, input: ImageStepDict) -> tf.Tensor:
+    def call(self, inputs: Dict[str, tf.Tensor]) -> tf.Tensor:
         raise NotImplementedError

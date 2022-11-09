@@ -4,8 +4,9 @@
 from typing import Dict, Iterable, Union
 import tensorflow as tf
 
-from .utils import ImageStepDict, get_input_shape
+from .utils import get_input_shape
 
+# from .utils import ImageStepDict, get_input_shape
 # import tensorflow_probability as tfp
 # tfd = tfp.distributions
 # flatten = tf.keras.layers.Flatten()
@@ -58,9 +59,11 @@ class DiffusionModel(tf.keras.Model):
     def get_alpha_bar_step(self, steps: tf.Tensor) -> tf.Tensor:
         return tf.gather(params=self._alpha_bar_schedule, indices=steps)
 
-    def call(self, inputs: ImageStepDict, training: bool = True):
+    def call(self, inputs: Dict[str, tf.Tensor], training: bool = True) -> tf.Tensor:
         raise NotImplementedError(
-            """Forward method `call` must be implemended in child class."""
+            """Forward method `call` must be implemended in child class.
+            `inputs` dict must have `image` and `step` keys.
+            """
         )
 
     def train_step(
@@ -86,7 +89,8 @@ class DiffusionModel(tf.keras.Model):
         input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * eps_target
 
         # input_tuple = (input, steps)
-        input_dict: ImageStepDict = {"image": input, "step": steps}
+        # input_dict: ImageStepDict = {"image": input, "step": steps}
+        input_dict = {"image": input, "step": steps}
 
         with tf.GradientTape() as tape:
             # Run forward pass.
@@ -128,7 +132,8 @@ class DiffusionModel(tf.keras.Model):
 
         # Denoising step transformation
         # input_tuple = (noise, steps)
-        input_dict: ImageStepDict = {"image": noise, "step": steps}
+        # input_dict: ImageStepDict = {"image": noise, "step": steps}
+        input_dict = {"image": noise, "step": steps}
         noise = const1 * (noise - const2 * self(input_dict, training=False)) + sigma * z
 
         return noise

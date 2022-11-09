@@ -1,13 +1,13 @@
 """Some utilities"""
 
 
-from typing import TypedDict
+# from typing import TypedDict
 import tensorflow as tf
 
 
-class ImageStepDict(TypedDict):
-    image: tf.Tensor
-    step: tf.Tensor
+# class ImageStepDict(TypedDict):
+#     image: tf.Tensor
+#     step: tf.Tensor
 
 
 def clone_initializer(initializer: tf.keras.initializers.Initializer):
