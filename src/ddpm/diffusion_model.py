@@ -2,14 +2,11 @@
 
 
 from typing import Dict, Iterable, Union
-
 import tensorflow as tf
 
+from .utils import ImageStepDict, get_input_shape
+
 # import tensorflow_probability as tfp
-
-from .utils import get_input_shape
-
-
 # tfd = tfp.distributions
 # flatten = tf.keras.layers.Flatten()
 
@@ -83,17 +80,18 @@ class DiffusionModel(tf.keras.Model):
         alpha = self.get_alpha_bar_step(steps)  # (B, 1)
         input = tf.math.sqrt(alpha) * x + tf.math.sqrt(1.0 - alpha) * eps_target
 
-        input_tuple = (input, steps)
+        # input_tuple = (input, steps)
+        input_dict: ImageStepDict = {"image": input, "step": steps}
 
         with tf.GradientTape() as tape:
             # Run forward pass.
-            eps_pred = self(input_tuple, training=True)  # (B, H, W, C)
-            loss = self.compute_loss(input_tuple, eps_target, eps_pred, sample_weight)
+            eps_pred = self(input_dict, training=True)  # (B, H, W, C)
+            loss = self.compute_loss(input_dict, eps_target, eps_pred, sample_weight)
         self._validate_target_and_loss(eps_target, loss)
 
         # Backpropagation: run backward pass.
         self.optimizer.minimize(loss, self.trainable_variables, tape=tape)
-        return self.compute_metrics(input_tuple, eps_target, eps_pred, sample_weight)
+        return self.compute_metrics(input_dict, eps_target, eps_pred, sample_weight)
 
     def _denoising_step(self, noise: tf.Tensor, step: int) -> tf.Tensor:
         """Denoising step.
@@ -124,10 +122,9 @@ class DiffusionModel(tf.keras.Model):
         const2 = (1.0 - alpha_steps) / tf.math.sqrt(1.0 - alpha_bar_steps)
 
         # Denoising step transformation
-        input_tuple = (noise, steps)
-        noise = (
-            const1 * (noise - const2 * self(input_tuple, training=False)) + sigma * z
-        )
+        # input_tuple = (noise, steps)
+        input_dict: ImageStepDict = {"image": noise, "step": steps}
+        noise = const1 * (noise - const2 * self(input_dict, training=False)) + sigma * z
         return noise
 
     def diffusion_sampling(

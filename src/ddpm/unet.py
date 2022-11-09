@@ -3,7 +3,8 @@
 from typing import Tuple
 import tensorflow as tf
 
-from diffusion_model import DiffusionModel
+from .diffusion_model import DiffusionModel
+from .utils import ImageStepDict
 
 
 class DiffusionUNet(DiffusionModel):
@@ -12,5 +13,5 @@ class DiffusionUNet(DiffusionModel):
     ):
         super().__init__(input_shape, data_format, **kwargs)
 
-    def call(self, input: Tuple[tf.Tensor]) -> tf.Tensor:
+    def call(self, input: ImageStepDict) -> tf.Tensor:
         raise NotImplementedError

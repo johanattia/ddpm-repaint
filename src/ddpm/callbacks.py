@@ -30,7 +30,7 @@ class DiffusionSynthesisCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch: int):
         if epoch % self.epoch_interval == 0:
-            images = self.model.sampling(
+            images = self.model.diffusion_sampling(
                 sampling_size=self.sampling_size, verbose=self.verbose
             )
             self.imshow(images)
