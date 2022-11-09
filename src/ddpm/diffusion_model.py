@@ -163,6 +163,7 @@ class DiffusionModel(tf.keras.Model):
 
         # Progress bar finalization + output generated images
         progbar.update(step, finalize=True)
+
         return noise
 
     def interpolate(self):
