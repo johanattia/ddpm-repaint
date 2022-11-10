@@ -209,7 +209,6 @@ class ConvBlock(layers.Layer):
         init_scale: float = 1.0,
         **kwargs,
     ):
-        self.name = kwargs.pop("name", "ConvBlock")
         super().__init__(**kwargs)
         self.filters = filters
         self.kernel_size = kernel_size
@@ -304,7 +303,6 @@ class ResidualBlock(layers.Layer):
         dropout: float = 0.2,
         **kwargs,
     ):
-        self.name = kwargs.pop("name", "ResidualBlock")
         super().__init__(**kwargs)
         self.output_channel = output_channel
         self.kernel_size = kernel_size
@@ -422,7 +420,6 @@ class AttentionBlock(layers.Layer):
         groups: int = 32,
         **kwargs,
     ):
-        self.name = kwargs.pop("name", "AttentionBlock")
         super().__init__(**kwargs)
         self.attention_channel = attention_channel
         self.data_format = data_format
