@@ -34,8 +34,8 @@ class DiffusionModel(tf.keras.Model):
                 data_format = "channels_last"
             else:
                 raise ValueError(
-                    """`data_format` must value `channels_last` or `channels_first`. 
-                    Default behavior to `channels_last`.
+                    f"""`data_format` must value `channels_last` or `channels_first`. 
+                    Received `{data_format}`, default behavior to `channels_last`.
                     """
                 )
         self.data_format = data_format
