@@ -32,12 +32,12 @@ class DiffusionModel(tf.keras.Model):
         if data_format not in ["channels_last", "channels_first"]:
             if data_format is None:
                 data_format = "channels_last"
-        else:
-            raise ValueError(
-                """`data_format` must value `channels_last` or `channels_first`. 
-                Default behavior to `channels_last`.
-                """
-            )
+            else:
+                raise ValueError(
+                    """`data_format` must value `channels_last` or `channels_first`. 
+                    Default behavior to `channels_last`.
+                    """
+                )
         self.data_format = data_format
 
         self.maxstep = maxstep
