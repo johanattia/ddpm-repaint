@@ -301,6 +301,7 @@ class ResidualBlock(layers.Layer):
         dilation_rate: Tuple[int] = (1, 1),
         conv_shortcut: bool = False,
         dropout: float = 0.2,
+        groups: int = 32,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -311,6 +312,7 @@ class ResidualBlock(layers.Layer):
         self.dilation_rate = dilation_rate
         self.conv_shortcut = conv_shortcut
         self.dropout = dropout
+        self.groups = groups
 
     def build(self, input_shape: tf.TensorShape):
         input_shape = tf.TensorShape(input_shape)
@@ -330,6 +332,7 @@ class ResidualBlock(layers.Layer):
             data_format=self.data_format,
             dilation_rate=self.dilation_rate,
             dropout=None,
+            groups=self.groups,
         )
         self.conv_block2 = ConvBlock(
             filters=self.output_channel,
@@ -338,6 +341,7 @@ class ResidualBlock(layers.Layer):
             data_format=self.data_format,
             dilation_rate=self.dilation_rate,
             dropout=self.dropout,
+            groups=self.groups,
             init_scale=1e-10,
         )
         self.dense = layers.Dense(
