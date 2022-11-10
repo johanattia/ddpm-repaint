@@ -176,16 +176,13 @@ class DiffusionModel(tf.keras.Model):
         raise NotImplementedError
 
     def get_config(self) -> Dict:
-        config = super().get_config()
-        config.update(
-            {
-                "image_shape": self.image_shape.as_list(),
-                "data_format": self.data_format,
-                "maxstep": self.maxstep,
-                "beta_min": self.beta_min,
-                "beta_max": self.beta_max,
-            }
-        )
+        config = {
+            "image_shape": self.image_shape.as_list(),
+            "data_format": self.data_format,
+            "maxstep": self.maxstep,
+            "beta_min": self.beta_min,
+            "beta_max": self.beta_max,
+        }
         return config
 
     @classmethod
