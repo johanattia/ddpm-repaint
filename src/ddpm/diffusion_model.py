@@ -15,7 +15,7 @@ from .utils import get_input_shape
 class DiffusionModel(tf.keras.Model):
     def __init__(
         self,
-        input_shape: tf.TensorShape = (256, 256, 3),
+        image_shape: tf.TensorShape = (256, 256, 3),
         data_format: str = "channels_last",
         maxstep: int = 1000,
         beta_min: float = 1e-4,
@@ -23,8 +23,8 @@ class DiffusionModel(tf.keras.Model):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.input_shape = get_input_shape(input_shape)  # (H, W, C) or (C, H, W)
-        # self.flattened_shape = tf.reduce_prod(self.input_shape)
+        self.image_shape = get_input_shape(image_shape)  # (H, W, C) or (C, H, W)
+        # self.flattened_shape = tf.reduce_prod(self.image_shape)
         # self.gaussian_dist = tfd.MultivariateNormalDiag(
         #    loc=tf.zeros(shape=[self.flattened_shape], dtype=tf.float32)
         # )
@@ -73,13 +73,13 @@ class DiffusionModel(tf.keras.Model):
         x, _, sample_weight = tf.keras.utils.unpack_x_y_sample_weight(data)
         batch_size = tf.shape(x)[0]
 
-        if tf.shape(x) != [batch_size] + self.input_shape:
-            raise ValueError(f"Input must have shape {self.input_shape}")
+        if tf.shape(x) != [batch_size] + self.image_shape:
+            raise ValueError(f"Input must have shape {self.image_shape}")
 
         # Gaussian noise sampling (B, H, W, C)
-        eps_target = tf.random.normal([batch_size] + self.input_shape)
+        eps_target = tf.random.normal([batch_size] + self.image_shape)
         # eps_target = self.gaussian_dist.sample(batch_size)
-        # eps = tf.reshape(eps_target, shape=[batch_size] + self.input_shape)
+        # eps = tf.reshape(eps_target, shape=[batch_size] + self.image_shape)
 
         # Prepare forward input (B, H, W, C)
         steps = tf.random.uniform(
@@ -115,9 +115,9 @@ class DiffusionModel(tf.keras.Model):
         # Sample gaussian noise
         sampling_size = tf.shape(noise)[0]
         z = (
-            tf.random.normal([sampling_size] + self.input_shape)
+            tf.random.normal([sampling_size] + self.image_shape)
             if step > 1
-            else tf.zeros([sampling_size] + self.input_shape)
+            else tf.zeros([sampling_size] + self.image_shape)
         )
 
         # Ste formating + get diffusion schedules
@@ -152,8 +152,8 @@ class DiffusionModel(tf.keras.Model):
         """
         # Sample gaussian noise
         # noise = self.gaussian_dist.sample(sampling_size)  # (B, H * W * C)
-        # noise = tf.reshape(noise, [sampling_size] + self.input_shape)  # (B, H, W, C)
-        noise = tf.random.normal([sampling_size] + self.input_shape)
+        # noise = tf.reshape(noise, [sampling_size] + self.image_shape)  # (B, H, W, C)
+        noise = tf.random.normal([sampling_size] + self.image_shape)
 
         # Initialize step and progress bar
         step = tf.Variable(0, dtype=tf.int32)
@@ -179,7 +179,7 @@ class DiffusionModel(tf.keras.Model):
         config = super().get_config()
         config.update(
             {
-                "input_shape": self.input_shape.as_list(),
+                "image_shape": self.image_shape.as_list(),
                 "data_format": self.data_format,
                 "maxstep": self.maxstep,
                 "beta_min": self.beta_min,

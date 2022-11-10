@@ -42,7 +42,7 @@ class DiffusionSynthesisCallback(tf.keras.callbacks.Callback):
         input_shape: tf.TensorShape = None,
     ):
         if self.model is not None:
-            input_shape, data_format = self.model.input_shape, self.model.data_format
+            input_shape, data_format = self.model.image_shape, self.model.data_format
         else:
             if data_format not in ["channels_last", "channels_first"]:
                 if data_format is None:
