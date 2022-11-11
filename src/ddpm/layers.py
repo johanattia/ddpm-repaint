@@ -1,7 +1,7 @@
 """U-Net layers"""
 
 
-from typing import Callable, Dict, Tuple, Union
+from typing import Callable, Dict, Iterable, Tuple, Union
 
 import tensorflow as tf
 from tensorflow.keras import layers
@@ -314,8 +314,8 @@ class ResidualBlock(layers.Layer):
         self.dropout = dropout
         self.groups = groups
 
-    def build(self, input_shape: tf.TensorShape):
-        input_shape = tf.TensorShape(input_shape)
+    def build(self, input_shape: Union[tf.TensorShape, Iterable[tf.TensorShape]]):
+        input_shape = tf.TensorShape(input_shape[0])
 
         if self.data_format == "channels_last":  # (B, H, W, C)
             channels = input_shape[-1]
