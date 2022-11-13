@@ -1,6 +1,6 @@
 """U-Net Diffusion Model from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/models/unet.py"""
 
-from tokenize import group
+
 from typing import Dict, Iterable, List, Union
 
 import tensorflow as tf
