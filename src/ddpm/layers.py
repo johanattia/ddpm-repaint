@@ -387,7 +387,7 @@ class ResidualBlock(layers.Layer):
 
     def call(
         self,
-        inputs: Tuple[types.FloatTensorLike, types.TensorLike],  # Dict[str, TensorLike]
+        inputs: Tuple[types.FloatTensorLike],
         training: bool = None,
     ) -> tf.Tensor:
         x, step_embed = inputs  # x, step_embed = inputs["image"], inputs["step"]
