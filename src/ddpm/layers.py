@@ -1,4 +1,4 @@
-"""U-Net layers"""
+"""Diffusion & U-Net layers"""
 
 
 from typing import Callable, Dict, Iterable, Tuple, Union
@@ -13,6 +13,22 @@ from tensorflow_addons import types  # import FloatTensorLike, TensorLike
 # TODO:
 # Review groupnorm for ConvBlock & ResidualConv for channels_first
 # Review layers input : image + embedding
+
+
+class NoiseScheduler(layers.Layer):
+    def __init__(self, **kwargs):
+        kwargs["trainable"] = False
+        super().__init__(**kwargs)
+
+    def build(self, input_shape):
+        return super().build(input_shape)
+
+    def call(self, inputs: tf.Tensor, training: bool = True) -> tf.Tensor:
+        return super().call(inputs, training)
+
+    def get_config(self) -> Dict:
+        config = super().get_config()
+        return config
 
 
 def PositionEmbedding(embed_dim: int):

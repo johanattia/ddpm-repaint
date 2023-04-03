@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List, Union
 import tensorflow as tf
 import tensorflow_addons as tfa
 
-from .diffusion_model import DiffusionModel
+from .ddpm import DiffusionModel
 from .layers import (
     PositionEmbedding,
     Upsample,
