@@ -7,17 +7,9 @@ import numpy as np
 import tensorflow as tf
 
 sys.path.append("..")
-from vtryon.models import diffusion
+from generative_models import ddpm
 
 
-# @conda_base(
-#    libraries={
-#        "tensorflow": "2.12",
-#        "tensorflow-addons": "0.18.0",
-#        "matplotlib": "3.5",
-#    },
-#    python="3.9.12",
-# )
 class DiffusionFlow(FlowSpec):
     """Diffusion flow for Cifar10 dataset.
 
@@ -26,7 +18,7 @@ class DiffusionFlow(FlowSpec):
         [1] Collect data
         [2] Train (and save weights)
         [3] Save (for serving)
-        [4] Deploy / Send to GCS ?
+        [4] Deploy
         [5] End
     """
 
@@ -127,10 +119,12 @@ class DiffusionFlow(FlowSpec):
             f"ARTIFACTS - IMAGES REGISTRY: {self.images_registry}",
             f"ARTIFACTS - IMAGES DIRECTORY: {self.images_directory}",
             "\n",
-            f"TRAINING - NB OF EPOCHS: {self.epochs}",
-            f"TRAINING - BATCH SIZE: {self.batch_size}",
             f"TRAINING - LEARNING RATE: {self.learning_rate}",
+            f"TRAINING - EMA: {self.ema}",
+            f"TRAINING - BATCH SIZE: {self.batch_size}",
             f"TRAINING - BUFFER SIZE: {self.buffer_size}",
+            f"TRAINING - NB OF EPOCHS: {self.epochs}",
+            f"TRAINING - MAXSTEP: {self.maxstep}"
             "\n",
             f"TRAINING - DIFFUSER CONFIG: OK",
             f"TRAINING - CHECKPOINT CONFIG: OK",
@@ -196,7 +190,7 @@ class DiffusionFlow(FlowSpec):
             .prefetch(tf.data.AUTOTUNE)
         )
 
-        diffuser = diffusion.ddpm.DiffusionUNetV2.from_config(self.diffuser_config)
+        diffuser = ddpm.unet.DiffusionUNet.from_config(self.diffuser_config)
 
         if self.ema:
             optimizer = tf.keras.optimizers.Adam(
@@ -217,7 +211,7 @@ class DiffusionFlow(FlowSpec):
         STEPS_PER_EPOCH = int(np.ceil(self.dataset_size / self.batch_size))
 
         checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(self.checkpoint_config)
-        synthesis_callback = diffusion.ddpm.DiffusionSynthesisCallback(
+        synthesis_callback = ddpm.callbacks.DiffusionSynthesisCallback(
             self.synthesis_config
         )
 
@@ -240,7 +234,7 @@ class DiffusionFlow(FlowSpec):
     def save(self):
         """Save model for deployment purpose"""
 
-        diffuser = diffusion.ddpm.DiffusionUNetV2.from_config(self.diffuser_config)
+        diffuser = ddpm.unet.DiffusionUNet.from_config(self.diffuser_config)
         diffuser.load_weights(self.best_weights_path)
 
         self.export_path = self.models_directory / f"cifar10_diffuser"
@@ -259,8 +253,8 @@ class DiffusionFlow(FlowSpec):
 
     @step
     def deploy(self):
-        """Deployment using TensorFlow Serving ? Send to GCS ?"""
-        print("Deploy model to GCS bucket:")
+        """Deployment using TensorFlow Serving?"""
+        print("Deploy model to _____")
 
         self.next(self.end)
 
