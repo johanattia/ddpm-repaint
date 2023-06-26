@@ -1,17 +1,20 @@
 [tool.poetry]
 name = "generative-models"
 version = "0.1.0"
-description = "Generative models with TensorFlow, including Generative Adversarial Networks (GAN), Diffusion Models (DM) and Variational Auto-Encoders (VAE)."
+description = "Modern Generative Models including Diffusion, VQGAN and Transformer-based models."
 authors = ["Johan Attia"]
 license = "MIT"
+readme = "README.md"
+packages = [{include = "generative_models"}]
 
 [tool.poetry.dependencies]
 python = ">=3.8,<3.11"
-tensorflow = "2.8"
-tensorflow-probability = "^0.17.0"
+tensorflow = "2.12.0"
+tensorflow-addons = "0.20.0"
+matplotlib = "^3.7.1"
+metaflow = "^2.9.6"
 
-[tool.poetry.dev-dependencies]
 
 [build-system]
-requires = ["poetry-core>=1.0.0"]
+requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
