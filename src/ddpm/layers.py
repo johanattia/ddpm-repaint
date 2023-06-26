@@ -1,7 +1,7 @@
-"""Diffusion & U-Net layers"""
+"""U-Net layers"""
 
 
-from typing import Callable, Dict, Iterable, Tuple, Union
+from typing import Callable, Dict, Iterable, List, Tuple, Union
 
 import tensorflow as tf
 from tensorflow.keras import layers
@@ -9,45 +9,30 @@ from tensorflow.keras import layers
 import tensorflow_addons as tfa
 from tensorflow_addons import types  # import FloatTensorLike, TensorLike
 
+from .utils import defaut_initializer
+
 
 # TODO:
-# Review groupnorm for ConvBlock & ResidualConv for channels_first
-# Review layers input : image + embedding
-
-
-class NoiseScheduler(layers.Layer):
-    def __init__(self, **kwargs):
-        kwargs["trainable"] = False
-        super().__init__(**kwargs)
-
-    def build(self, input_shape):
-        return super().build(input_shape)
-
-    def call(self, inputs: tf.Tensor, training: bool = True) -> tf.Tensor:
-        return super().call(inputs, training)
-
-    def get_config(self) -> Dict:
-        config = super().get_config()
-        return config
+# Review PositionEmbedding : layer with in-memory embedding rather than lambda ?
+# Review groupnorm for ResBlock for channels_first
 
 
 def PositionEmbedding(embed_dim: int):
     # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
-    def _sinusoidal_embedding(
-        steps: types.TensorLike,
-    ) -> types.FloatTensorLike:
+    def _sinusoidal_embedding(steps: types.TensorLike) -> types.FloatTensorLike:
         # input shape: (B, 1)
-        batch_size = tf.shape(steps)[0]
-        if steps.shape != tf.TensorShape([batch_size, 1]):
-            raise ValueError
+        # batch_size = tf.shape(steps)[0]
+        # if steps.shape != tf.TensorShape([batch_size, 1]):
+        #     raise ValueError
 
         half_dim = embed_dim // 2
-        const = -tf.math.log(10000.0) / (half_dim - 1)
-        const = tf.exp(
-            tf.expand_dims(tf.range(half_dim, dtype=tf.float32), axis=0) * const
-        )
-        const = tf.cast(steps, dtype=tf.float32) * const
-        step_embed = tf.concat([tf.sin(const), tf.cos(const)], axis=1)
+        freqs = -tf.math.log(10000.0) / (half_dim - 1)
+        # freqs = tf.exp(
+        #     tf.expand_dims(tf.range(half_dim, dtype=tf.float32), axis=0) * freqs
+        # )
+        freqs = tf.exp(tf.range(half_dim, dtype=tf.float32) * freqs)
+        args = tf.cast(steps, dtype=tf.float32) * tf.expand_dims(freqs, axis=0)
+        step_embed = tf.concat([tf.sin(args), tf.cos(args)], axis=1)
 
         if embed_dim % 2 == 1:
             return tf.pad(step_embed, [[0, 0], [0, 1]])
@@ -55,27 +40,6 @@ def PositionEmbedding(embed_dim: int):
         return step_embed  # output shape: (B, embed_dim)
 
     return layers.Lambda(_sinusoidal_embedding)
-
-
-class CELU(layers.Layer):
-    def __init__(self, alpha: float = 1.0, axis: int = -1, **kwargs):
-        super().__init__(**kwargs)
-        if axis is None:
-            raise ValueError(
-                "`axis` of a CELU layer cannot be None, expecting an integer."
-            )
-        self.axis = axis
-        self.alpha = float(alpha)
-        self.elu = layers.ELU(alpha=self.alpha)
-        self.concat = layers.Concatenate(axis=self.axis)
-
-    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
-        return self.elu(self.concat([inputs, -inputs]))
-
-    def get_config(self) -> Dict:
-        config = super(CELU, self).get_config()
-        config.update({"alpha": self.alpha, "axis": self.axis})
-        return config
 
 
 class Upsample(layers.Layer):
@@ -114,13 +78,11 @@ class Upsample(layers.Layer):
                 data_format=self.data_format,
                 dilation_rate=(1, 1),
                 use_bias=True,
-                kernel_initializer=tf.keras.initializers.VarianceScaling(
-                    scale=1.0, mode="fan_avg", distribution="uniform"
-                ),
+                kernel_initializer=defaut_initializer(scale=1.0),
             )
         super().build(input_shape)
 
-    def call(self, inputs: types.FloatTensorLike):
+    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
         x = self.upsample(inputs)
 
         if self._use_conv:
@@ -147,9 +109,7 @@ def downsample_conv(data_format: str = "channels_last", channels: int = 3):
         data_format=data_format,
         dilation_rate=(1, 1),
         use_bias=True,
-        kernel_initializer=tf.keras.initializers.VarianceScaling(
-            scale=1.0, mode="fan_avg", distribution="uniform"
-        ),
+        kernel_initializer=defaut_initializer(scale=1.0),
     )
 
 
@@ -169,9 +129,7 @@ def downsample_pool_and_conv(data_format: str = "channels_last", channels: int =
                 data_format=data_format,
                 dilation_rate=(1, 1),
                 use_bias=True,
-                kernel_initializer=tf.keras.initializers.VarianceScaling(
-                    scale=1.0, mode="fan_avg", distribution="uniform"
-                ),
+                kernel_initializer=defaut_initializer(scale=1.0),
             ),
         ]
     )
@@ -207,182 +165,81 @@ class Downsample(layers.Layer):
         )
         super().build(input_shape)
 
-    def call(self, inputs: types.FloatTensorLike):
+    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
         return self.downsample(inputs)
 
 
-class ConvBlock(layers.Layer):
+class ResBlock(layers.Layer):
     def __init__(
         self,
-        filters: int = None,
         kernel_size: Union[int, Tuple[int]] = (3, 3),
-        strides: Tuple[int] = (1, 1),
         data_format: str = "channels_last",
-        dilation_rate: Tuple[int] = (1, 1),
-        use_bias: bool = True,
-        dropout: float = 0.2,
         groups: int = 32,
-        init_scale: float = 1.0,
+        dropout: float = 0.2,
+        output_channel: int = None,
+        conv_shortcut: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.filters = filters
+        # CONV LAYERS
         self.kernel_size = kernel_size
-        self.strides = strides
         self.data_format = data_format
-        self.dilation_rate = dilation_rate
-        self.use_bias = use_bias
-        self._dropout = dropout
-        self.groups = groups
-        self._init_scale = init_scale
 
-    def build(self, input_shape: tf.TensorShape):
-        input_shape = tf.TensorShape(input_shape)
+        # OUTPUT LAYERS
+        self.conv_shortcut = conv_shortcut
+        self.output_channel = output_channel
+        self.output_projection = None
+
+        # DROPOUT & NORMALIZATION LAYERS
+        self._dropout = dropout
+        self.dropout = layers.Dropout(rate=self._dropout)
+
+        self.groups = groups
+        self.group_norm1 = tfa.layers.GroupNormalization(
+            groups=self.groups, axis=-1 if data_format == "channels_last" else 1
+        )
+        self.group_norm2 = tfa.layers.GroupNormalization(
+            groups=self.groups, axis=-1 if data_format == "channels_last" else 1
+        )
+
+    def build(self, input_shape: Union[tf.TensorShape, Iterable[tf.TensorShape]]):
+        input_shape = tf.TensorShape(input_shape[0])
         if len(input_shape) != 4:
             raise ValueError(
                 f"""Input of a `ConvBlock` layer should correspond to a batch of images.
                 Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
                 """
             )
-
-        if self.data_format == "channels_last":  # (B, H, W, C)
-            channels_axis = -1
-        else:  # (B, C, H, W)
-            channels_axis = 1
-        channels = input_shape[channels_axis]
-
+        channels = (
+            input_shape[-1] if self.data_format == "channels_last" else input_shape[1]
+        )
         if channels % self.groups != 0:
             raise ValueError(
                 f"""Normalization `groups` must divide input channels. Received groups={self.groups}.
                 while channels={channels}.
                 """
             )
-        self.group_norm = tfa.layers.GroupNormalization(
-            groups=self.groups, axis=channels_axis
-        )
-
-        if self.filters is None:
-            self.filters = channels
-
-        if self._dropout:
-            self.dropout = layers.Dropout(rate=self._dropout)
-
-        self.conv = layers.Conv2D(
-            filters=self.filters,
-            kernel_size=self.kernel_size,
-            strides=self.strides,
-            padding="same",
-            data_format=self.data_format,
-            dilation_rate=self.dilation_rate,
-            use_bias=self.use_bias,
-            kernel_initializer=tf.keras.initializers.VarianceScaling(
-                scale=self._init_scale, mode="fan_avg", distribution="uniform"
-            ),
-        )
-        super().build(input_shape)
-
-    def call(self, inputs: types.FloatTensorLike, training: bool = None) -> tf.Tensor:
-        x = tf.nn.silu(self.group_norm(inputs))
-
-        if self._dropout:
-            x = self.dropout(x, training=training)
-
-        return self.conv(x)
-
-    def get_config(self) -> Dict:
-        config = super(ConvBlock, self).get_config()
-        config.update(
-            {
-                "filters": self.filters,
-                "kernel_size": self.kernel_size,
-                "strides": self.strides,
-                "data_format": self.data_format,
-                "dilation_rate": self.dilation_rate,
-                "use_bias": self.use_bias,
-                "dropout": self._dropout,
-                "groups": self.groups,
-                "init_scale": self._init_scale,
-            }
-        )
-        return config
-
-
-class ResidualBlock(layers.Layer):
-    def __init__(
-        self,
-        output_channel: int = None,
-        kernel_size: Union[int, Tuple[int]] = (3, 3),
-        strides: Tuple[int] = (1, 1),
-        data_format: str = "channels_last",
-        dilation_rate: Tuple[int] = (1, 1),
-        conv_shortcut: bool = False,
-        dropout: float = 0.2,
-        groups: int = 32,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.output_channel = output_channel
-        self.kernel_size = kernel_size
-        self.strides = strides
-        self.data_format = data_format
-        self.dilation_rate = dilation_rate
-        self.conv_shortcut = conv_shortcut
-        self.dropout = dropout
-        self.groups = groups
-
-    def build(self, input_shape: Union[tf.TensorShape, Iterable[tf.TensorShape]]):
-        input_shape = tf.TensorShape(input_shape[0])
-
-        if self.data_format == "channels_last":  # (B, H, W, C)
-            channels = input_shape[-1]
-        else:  # (B, C, H, W)
-            channels = input_shape[1]
-
         if self.output_channel is None:
             self.output_channel = channels
 
-        self.conv_block1 = ConvBlock(
-            filters=self.output_channel,
-            kernel_size=self.kernel_size,
-            strides=self.strides,
-            data_format=self.data_format,
-            dilation_rate=self.dilation_rate,
-            dropout=None,
-            groups=self.groups,
-        )
-        self.conv_block2 = ConvBlock(
-            filters=self.output_channel,
-            kernel_size=self.kernel_size,
-            strides=self.strides,
-            data_format=self.data_format,
-            dilation_rate=self.dilation_rate,
-            dropout=self.dropout,
-            groups=self.groups,
-            init_scale=1e-10,
-        )
         self.dense = layers.Dense(
             units=self.output_channel,
             use_bias=True,
-            kernel_initializer=tf.keras.initializers.VarianceScaling(
-                scale=1.0, mode="fan_avg", distribution="uniform"
-            ),
+            kernel_initializer=defaut_initializer(1.0),
         )
-        # Projection of input tensor in output space before residual addition
-        self.output_projection = None
+        conv_kwargs = dict(
+            filters=self.output_channel,
+            kernel_size=self.kernel_size,
+            padding="same",
+            data_format=self.data_format,
+            kernel_initializer=defaut_initializer(scale=1.0),
+        )
+        self.conv1 = layers.Conv2D(**conv_kwargs)
+        self.conv2 = layers.Conv2D(**conv_kwargs)
+
         if self.output_channel != channels:
-            if self.conv_shortcut:
-                self.output_projection = layers.Conv2D(
-                    filters=self.output_channel,
-                    kernel_size=self.kernel_size,
-                    strides=self.strides,
-                    padding="same",
-                    data_format=self.data_format,
-                    dilation_rate=self.dilation_rate,
-                    use_bias=True,
-                    kernel_initializer=tf.keras.initializers.VarianceScaling(
-                        scale=1.0, mode="fan_avg", distribution="uniform"
-                    ),
-                )
+            if not self.conv_shortcut:
+                self.output_projection = layers.Conv2D(**conv_kwargs)
             else:
                 if self.data_format == "channels_last":
                     equation = "abcd,de->abce"
@@ -395,55 +252,58 @@ class ResidualBlock(layers.Layer):
                     equation,
                     output_shape=output_shape,
                     bias_axes="e",
-                    kernel_initializer=tf.keras.initializers.VarianceScaling(
-                        scale=1.0, mode="fan_avg", distribution="uniform"
-                    ),
+                    kernel_initializer=defaut_initializer(scale=1.0),
                 )
+        # else:
+        #    self.output_projection = layers.Identity()
+
         super().build(input_shape)
 
     def call(
-        self,
-        inputs: Tuple[types.FloatTensorLike],
-        training: bool = None,
-    ) -> tf.Tensor:
-        x, step_embed = inputs  # x, step_embed = inputs["image"], inputs["step"]
-        h = self.conv_block1(x)
+        self, inputs: Tuple[types.FloatTensorLike], training: bool = None
+    ) -> types.FloatTensorLike:
+        x, step_embed = inputs
+
+        h = tf.nn.silu(self.group_norm1(x))
+        h = self.conv1(h)
+
         h += self.dense(tf.nn.silu(step_embed))[:, tf.newaxis, tf.newaxis, :]
-        h = self.conv_block2(x, training=training)
+
+        h = tf.nn.silu(self.group_norm2(h))
+        h = self.dropout(h, training=training)
+        h = self.conv2(h)
 
         if self.output_projection is not None:
             x = self.output_projection(x)
 
-        return x + h
+        return h + x  # h + self.output_projection(x)
 
     def get_config(self) -> Dict:
-        config = super(ResidualBlock, self).get_config()
+        config = super().get_config()
         config.update(
             {
-                "output_channel": self.output_channel,
                 "kernel_size": self.kernel_size,
-                "strides": self.strides,
                 "data_format": self.data_format,
-                "dilation_rate": self.dilation_rate,
+                "groups": self.groups,
+                "dropout": self._dropout,
+                "output_channel": self.output_channel,
                 "conv_shortcut": self.conv_shortcut,
-                "dropout": self.dropout,
             }
         )
         return config
 
 
-class AttentionBlock(layers.Layer):
-    def __init__(
-        self,
-        attention_channel: int = None,
-        data_format: str = "channels_last",
-        groups: int = 32,
-        **kwargs,
-    ):
+class SpatialAttention(layers.Layer):
+    def __init__(self, data_format: str = "channels_last", groups: int = 32, **kwargs):
         super().__init__(**kwargs)
-        self.attention_channel = attention_channel
         self.data_format = data_format
+
         self.groups = groups
+        self.group_norm = tfa.layers.GroupNormalization(
+            groups=self.groups, axis=-1 if data_format == "channels_last" else 1
+        )
+
+        self.scale = None
         self.attention_equation = None
         self.attention_output_equation = None
 
@@ -451,28 +311,18 @@ class AttentionBlock(layers.Layer):
         input_shape = tf.TensorShape(input_shape)
         if len(input_shape) != 4:
             raise ValueError(
-                f"""Input of an `AttentionBlock` layer should correspond to a batch of images.
+                f"""Input of an `SpatialAttention` layer should correspond to a batch of images.
                 Expected shape is either (B, H, W, C) or (B, C, H, W).  Received: {input_shape}.
                 """
             )
-
-        if self.data_format == "channels_last":  # (B, H, W, C)
-            channels_axis = -1
-        else:  # (B, C, H, W)
-            channels_axis = 1
-        channels = input_shape[channels_axis]
-
-        if self.attention_channel is None:
-            self.attention_channel = channels
-
-        # Layers definition
-        self.group_norm = tfa.layers.GroupNormalization(
-            groups=self.groups, axis=channels_axis
+        channels = (
+            input_shape[-1] if self.data_format == "channels_last" else input_shape[1]
         )
+        self.scale = int(channels) ** (-0.5)
 
         if self.data_format == "channels_last":
             projection_equation = "bhwc,cae->bhwae"
-            projection_shape = (None, None, self.attention_channel, 3)
+            projection_shape = (None, None, channels, 3)
 
             self.attention_equation = "bhwc,btlc->bhwtl"
             self.attention_output_equation = "bhwtl,btlc->bhwc"
@@ -481,7 +331,7 @@ class AttentionBlock(layers.Layer):
             output_shape = (None, None, channels)
         else:
             projection_equation = "bchw,cae->bahwe"
-            projection_shape = (self.attention_channel, None, None, 3)
+            projection_shape = (channels, None, None, 3)
 
             self.attention_equation = "bchw,bctl->bhwtl"
             self.attention_output_equation = "bhwtl,bctl->bchw"
@@ -493,32 +343,26 @@ class AttentionBlock(layers.Layer):
             projection_equation,
             output_shape=projection_shape,
             bias_axes="ae",
-            kernel_initializer=tf.keras.initializers.VarianceScaling(
-                scale=1.0, mode="fan_avg", distribution="uniform"
-            ),
+            kernel_initializer=defaut_initializer(scale=1.0),
         )
         self.output_dense = layers.experimental.EinsumDense(
             output_equation,
             output_shape=output_shape,
             bias_axes="d",
-            kernel_initializer=tf.keras.initializers.VarianceScaling(
-                scale=1.0, mode="fan_avg", distribution="uniform"
-            ),
+            kernel_initializer=defaut_initializer(scale=1.0),
         )
         super().build(input_shape)
 
-    def call(self, inputs: types.FloatTensorLike, training: bool = None):
-        attention_tensors = self.attention_projection(
-            self.group_norm(inputs)
-        )  # (B, H, W, C, 3) or (B, C, H, W, 3)
-        query, key, value = tf.unstack(
-            attention_tensors, axis=-1
-        )  # 3 * (B, H, W, C) or (B, C, H, W)
-
-        attention_weights = tf.einsum(self.attention_equation, query, key) * (
-            int(self.attention_channel) ** (-0.5)
-        )
+    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
         batch, height, width = self._get_batch_shapes(inputs)
+        # scale = int(self.attention_units) ** (-0.5)
+
+        # 1: (B, H, W, C)/(B, C, H, W) => (B, H, W, C, 3)/(B, C, H, W, 3)
+        # 2: (B, H, W, C, 3)/(B, C, H, W, 3) => 3 * (B, H, W, C)/(B, C, H, W)
+        attention_tensors = self.attention_projection(self.group_norm(inputs))
+        query, key, value = tf.unstack(attention_tensors, axis=-1)
+
+        attention_weights = tf.einsum(self.attention_equation, query, key) * self.scale
         attention_weights = tf.reshape(
             attention_weights, [batch, height, width, height * width]
         )
@@ -527,13 +371,13 @@ class AttentionBlock(layers.Layer):
             attention_weights, [batch, height, width, height, width]
         )
 
+        # # (B, H, W, C) or (B, C, H, W)
         attention_output = tf.einsum(
             self.attention_output_equation, attention_weights, value
-        )  # (B, H, W, C) or (B, C, H, W)
+        )
         attention_output = self.output_dense(attention_output)
-        output = inputs + attention_output
 
-        return output
+        return inputs + attention_output
 
     def _get_batch_shapes(self, inputs: types.FloatTensorLike) -> Tuple[int]:
         input_shape = tf.shape(inputs)
@@ -545,11 +389,237 @@ class AttentionBlock(layers.Layer):
 
     def get_config(self) -> Dict:
         config = super().get_config()
+        config.update({"data_format": self.data_format, "groups": self.groups})
+        return config
+
+
+class ResAttentionBlock(layers.Layer):
+    def __init__(
+        self,
+        data_format: str = "channels_last",
+        groups: int = 32,
+        dropout: float = 0.2,
+        output_channel: int = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.data_format = data_format
+        self.groups = groups
+        self.dropout = dropout
+        self.output_channel = output_channel
+
+        self.resblock = ResBlock(
+            data_format=data_format,
+            dropout=dropout,
+            output_channel=output_channel,
+            name="resblock",
+        )
+        self.attention = SpatialAttention(
+            data_format=data_format, groups=groups, name="spatial_attention"
+        )
+
+    def call(
+        self, inputs: Tuple[types.FloatTensorLike], training: bool = None
+    ) -> types.FloatTensorLike:
+        x, step_embed = inputs
+        return self.attention(self.resblock(inputs=(x, step_embed), training=training))
+
+    def get_config(self) -> Dict:
+        config = super().get_config()
         config.update(
             {
-                "attention_channel": self.attention_channel,
                 "data_format": self.data_format,
                 "groups": self.groups,
+                "dropout": self.dropout,
+                "output_channel": self.output_channel,
             }
         )
-        raise config
+        return config
+
+
+class UNetEncoderBlock(layers.Layer):
+    def __init__(
+        self,
+        n_residual_blocks: int = 2,
+        data_format: str = "channels_last",
+        groups: int = 32,
+        dropout: float = 0.2,
+        output_channel: int = None,
+        use_attention: bool = False,
+        downsample: bool = True,
+        use_conv: bool = True,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.n_residual_blocks = n_residual_blocks
+        self.data_format = data_format
+
+        if use_attention and groups is None:
+            raise ValueError(
+                "`groups` arg should be a valid integer if `use_attention`=True."
+            )
+        self.groups = groups
+        self.use_attention = use_attention
+
+        self.dropout = dropout
+        self.output_channel = output_channel
+
+        self._downsample = downsample
+        self.use_conv = use_conv
+
+        self.downsample = None
+        if self._downsample:
+            self.downsample = Downsample(
+                downsample_fn=downsample_conv if self.use_conv else downsample_pool,
+                data_format=self.data_format,
+                name=f"downsample",
+            )
+
+        for i in range(self.n_residual_blocks):
+            if self.use_attention:
+                setattr(
+                    self,
+                    f"block{i}",
+                    ResAttentionBlock(
+                        data_format=self.data_format,
+                        groups=self.groups,
+                        dropout=self.dropout,
+                        output_channel=self.output_channel,
+                        name=f"res_attention_block{i}",
+                    ),
+                )
+            else:
+                setattr(
+                    self,
+                    f"block{i}",
+                    ResBlock(
+                        data_format=self.data_format,
+                        dropout=self.dropout,
+                        output_channel=self.output_channel,
+                        name=f"res_block{i}",
+                    ),
+                )
+
+    def call(
+        self, inputs: Iterable[types.FloatTensorLike], training: bool = None
+    ) -> List[types.FloatTensorLike]:
+        h, step_embed = inputs
+
+        outputs = []
+
+        for i in range(self.n_residual_blocks):
+            h = getattr(self, f"block{i}")(inputs=(h, step_embed), training=training)
+            outputs.append(h)
+
+        if self._downsample:
+            outputs.append(self.downsample(h))
+
+        return outputs
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "n_residual_blocks": self.n_residual_blocks,
+                "data_format": self.data_format,
+                "groups": self.groups,
+                "dropout": self.dropout,
+                "output_channel": self.output_channel,
+                "use_attention": self.use_attention,
+                "downsample": self._downsample,
+                "use_conv": self.use_conv,
+            }
+        )
+        return config
+
+
+class UNetDecoderBlock(layers.Layer):
+    def __init__(
+        self,
+        n_residual_blocks: int = 2,
+        data_format: str = "channels_last",
+        groups: int = 32,
+        dropout: float = 0.2,
+        output_channel: int = None,
+        use_attention: bool = False,
+        upsample: bool = True,
+        use_conv: bool = True,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.n_residual_blocks = n_residual_blocks
+        self.data_format = data_format
+
+        if use_attention and groups is None:
+            raise ValueError(
+                "`groups` arg should be a valid integer if `use_attention`=True."
+            )
+        self.groups = groups
+        self.use_attention = use_attention
+
+        self.dropout = dropout
+        self.output_channel = output_channel
+
+        self._upsample = upsample
+        self.use_conv = use_conv
+
+        self.upsample = None
+        if self._upsample:
+            self.upsample = Upsample(
+                data_format=self.data_format, use_conv=self.use_conv, name=f"upsample"
+            )
+
+        for i in range(self.n_residual_blocks + 1):
+            if self.use_attention:
+                setattr(
+                    self,
+                    f"block{i}",
+                    ResAttentionBlock(
+                        data_format=self.data_format,
+                        groups=self.groups,
+                        dropout=self.dropout,
+                        output_channel=self.output_channel,
+                        name=f"res_attention_block{i}",
+                    ),
+                )
+            else:
+                setattr(
+                    self,
+                    f"block{i}",
+                    ResBlock(
+                        data_format=self.data_format,
+                        dropout=self.dropout,
+                        output_channel=self.output_channel,
+                        name=f"res_block{i}",
+                    ),
+                )
+
+    def call(
+        self, inputs: Iterable[types.FloatTensorLike], training: bool = None
+    ) -> types.FloatTensorLike:
+        h, hidden_states, step_embed = inputs
+
+        for i in range(self.n_residual_blocks + 1):
+            h = tf.concat([h, hidden_states.pop()], axis=-1)
+            h = getattr(self, f"block{i}")(inputs=(h, step_embed), training=training)
+
+        if self._upsample:
+            h = self.upsample(h)
+
+        return h
+
+    def get_config(self):
+        config = super().get_config()
+        config.update(
+            {
+                "n_residual_blocks": self.n_residual_blocks,
+                "data_format": self.data_format,
+                "groups": self.groups,
+                "dropout": self.dropout,
+                "output_channel": self.output_channel,
+                "use_attention": self.use_attention,
+                "upsample": self._upsample,
+                "use_conv": self.use_conv,
+            }
+        )
+        return config

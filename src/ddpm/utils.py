@@ -1,13 +1,20 @@
 """Some utilities"""
 
 
-# from typing import TypedDict
+from typing import Optional  # , TypedDict
 import tensorflow as tf
 
 
-# class ImageStepDict(TypedDict):
-#     image: tf.Tensor
-#     step: tf.Tensor
+# class ImageStepDict(TypedDict, total=False):
+#    image: tf.Tensor
+#    step: tf.Tensor
+#    label: Optional[tf.Tensor]
+
+
+def defaut_initializer(scale: float = 1.0):
+    return tf.keras.initializers.VarianceScaling(
+        scale=scale, mode="fan_avg", distribution="uniform"
+    )
 
 
 def clone_initializer(initializer: tf.keras.initializers.Initializer):
