@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras import preprocessing
 
-from .utils import get_input_shape
+from generative_models.ddpm import utils
 
 
 # Reference: https://keras.io/examples/generative/gaugan/#gan-monitor-callback
@@ -93,13 +93,13 @@ class DiffusionSynthesisCallback(tf.keras.callbacks.Callback):
 
             if input_shape is None:
                 if samples is not None:
-                    input_shape = get_input_shape(tf.shape(samples))
+                    input_shape = utils.get_input_shape(tf.shape(samples))
                 else:
                     raise ValueError(
                         "Either `images` or `input_shape` must be non-empty valid values."
                     )
             else:
-                input_shape = get_input_shape(input_shape)
+                input_shape = utils.get_input_shape(input_shape)
 
         if samples is None:
             samples = tf.random.normal([self.sampling_size] + input_shape)

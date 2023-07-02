@@ -7,9 +7,9 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 import tensorflow_addons as tfa
-from tensorflow_addons import types  # import FloatTensorLike, TensorLike
+from tensorflow_addons import types
 
-from .utils import defaut_initializer
+from generative_models.ddpm import utils
 
 
 # TODO:
@@ -78,7 +78,7 @@ class Upsample(layers.Layer):
                 data_format=self.data_format,
                 dilation_rate=(1, 1),
                 use_bias=True,
-                kernel_initializer=defaut_initializer(scale=1.0),
+                kernel_initializer=utils.defaut_initializer(scale=1.0),
             )
         super().build(input_shape)
 
@@ -109,7 +109,7 @@ def downsample_conv(data_format: str = "channels_last", channels: int = 3):
         data_format=data_format,
         dilation_rate=(1, 1),
         use_bias=True,
-        kernel_initializer=defaut_initializer(scale=1.0),
+        kernel_initializer=utils.defaut_initializer(scale=1.0),
     )
 
 
@@ -129,7 +129,7 @@ def downsample_pool_and_conv(data_format: str = "channels_last", channels: int =
                 data_format=data_format,
                 dilation_rate=(1, 1),
                 use_bias=True,
-                kernel_initializer=defaut_initializer(scale=1.0),
+                kernel_initializer=utils.defaut_initializer(scale=1.0),
             ),
         ]
     )
@@ -225,14 +225,14 @@ class ResBlock(layers.Layer):
         self.dense = layers.Dense(
             units=self.output_channel,
             use_bias=True,
-            kernel_initializer=defaut_initializer(1.0),
+            kernel_initializer=utils.defaut_initializer(1.0),
         )
         conv_kwargs = dict(
             filters=self.output_channel,
             kernel_size=self.kernel_size,
             padding="same",
             data_format=self.data_format,
-            kernel_initializer=defaut_initializer(scale=1.0),
+            kernel_initializer=utils.defaut_initializer(scale=1.0),
         )
         self.conv1 = layers.Conv2D(**conv_kwargs)
         self.conv2 = layers.Conv2D(**conv_kwargs)
@@ -252,7 +252,7 @@ class ResBlock(layers.Layer):
                     equation,
                     output_shape=output_shape,
                     bias_axes="e",
-                    kernel_initializer=defaut_initializer(scale=1.0),
+                    kernel_initializer=utils.defaut_initializer(scale=1.0),
                 )
         # else:
         #    self.output_projection = layers.Identity()
@@ -343,13 +343,13 @@ class SpatialAttention(layers.Layer):
             projection_equation,
             output_shape=projection_shape,
             bias_axes="ae",
-            kernel_initializer=defaut_initializer(scale=1.0),
+            kernel_initializer=utils.defaut_initializer(scale=1.0),
         )
         self.output_dense = layers.experimental.EinsumDense(
             output_equation,
             output_shape=output_shape,
             bias_axes="d",
-            kernel_initializer=defaut_initializer(scale=1.0),
+            kernel_initializer=utils.defaut_initializer(scale=1.0),
         )
         super().build(input_shape)
 

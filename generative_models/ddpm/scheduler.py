@@ -6,10 +6,10 @@ from typing import Dict, Iterable, Tuple, Union
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from .utils import get_input_shape
+from generative_models.ddpm import utils
 
 
-class DiffusionScheduler(layers.Layer):  # NoiseScheduler
+class DiffusionScheduler(layers.Layer):
     def __init__(
         self,
         image_shape: Union[Iterable[int], tf.TensorShape],
@@ -22,7 +22,7 @@ class DiffusionScheduler(layers.Layer):  # NoiseScheduler
         kwargs["trainable"] = False
         super().__init__(**kwargs)
 
-        self.image_shape = get_input_shape(image_shape)
+        self.image_shape = utils.get_input_shape(image_shape)
         self.maxstep = maxstep
         self.beta_min = beta_min
         self.beta_max = beta_max

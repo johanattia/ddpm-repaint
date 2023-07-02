@@ -1,14 +1,14 @@
 """Some utilities"""
 
 
-from typing import Optional  # , TypedDict
+from typing import Optional, TypedDict
 import tensorflow as tf
 
 
-# class ImageStepDict(TypedDict, total=False):
-#    image: tf.Tensor
-#    step: tf.Tensor
-#    label: Optional[tf.Tensor]
+class ImageStepDict(TypedDict, total=False):
+    image: tf.Tensor
+    step: tf.Tensor
+    label: Optional[tf.Tensor]
 
 
 def defaut_initializer(scale: float = 1.0):

@@ -124,8 +124,7 @@ class DiffusionFlow(FlowSpec):
             f"TRAINING - BATCH SIZE: {self.batch_size}",
             f"TRAINING - BUFFER SIZE: {self.buffer_size}",
             f"TRAINING - NB OF EPOCHS: {self.epochs}",
-            f"TRAINING - MAXSTEP: {self.maxstep}"
-            "\n",
+            f"TRAINING - MAXSTEP: {self.maxstep}" "\n",
             f"TRAINING - DIFFUSER CONFIG: OK",
             f"TRAINING - CHECKPOINT CONFIG: OK",
             f"TRAINING - SYNTHESIS CONFIG: OK",

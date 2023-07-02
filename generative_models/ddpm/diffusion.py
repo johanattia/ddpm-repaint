@@ -1,15 +1,15 @@
 """Diffusion Model from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/models/unet.py"""
 
 
-from typing import Any, Dict, Iterable, Tuple, Union
+from typing import Any, Dict, Iterable, Union
+
 import tensorflow as tf
 
-from .noise_scheduler import DiffusionScheduler
-from .utils import get_input_shape  # ImageStepDict
+from generative_models.ddpm import scheduler, utils
 
 
-class BaseDiffusionModel(tf.keras.Model):
-    """Base class for Denoising Diffusion Probabilistic Model.
+class BaseDiffuser(tf.keras.Model):
+    """Abstract class for Denoising Diffusion Probabilistic Model.
     U-Net architecture must be implemented as a child class.
     """
 
@@ -25,7 +25,7 @@ class BaseDiffusionModel(tf.keras.Model):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.image_shape = get_input_shape(image_shape)  # (H, W, C) or (C, H, W)
+        self.image_shape = utils.get_input_shape(image_shape)  # (H, W, C) or (C, H, W)
 
         if data_format not in ["channels_last", "channels_first"]:
             if data_format is None:
@@ -48,8 +48,7 @@ class BaseDiffusionModel(tf.keras.Model):
         self.maxstep = maxstep
         self.beta_min = beta_min
         self.beta_max = beta_max
-
-        self.diffusion_scheduler = DiffusionScheduler(
+        self.diffusion_scheduler = scheduler.DiffusionScheduler(
             image_shape=self.image_shape,
             maxstep=maxstep,
             beta_min=beta_min,

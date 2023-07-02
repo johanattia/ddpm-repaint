@@ -1,8 +1,8 @@
 from . import (
-    base_diffusion,
     callbacks,
+    diffusion,
     layers,
-    noise_scheduler,
+    scheduler,
     training_config,
     unet,
     utils,

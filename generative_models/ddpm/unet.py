@@ -8,8 +8,8 @@ import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow_addons import types
 
-from .base_diffusion import BaseDiffusionModel
-from .layers import (
+from generative_models.ddpm import diffusion, utils
+from generative_models.ddpm.layers import (
     PositionEmbedding,
     ResBlock,
     SpatialAttention,
@@ -17,13 +17,11 @@ from .layers import (
     UNetDecoderBlock,
 )
 
-from .utils import defaut_initializer
-
 
 # TODO: model tests
 
 
-class DiffusionUNet(BaseDiffusionModel):
+class DiffusionUNet(diffusion.BaseDiffuser):
     def __init__(
         self,
         image_shape: tf.TensorShape,
@@ -66,11 +64,11 @@ class DiffusionUNet(BaseDiffusionModel):
                 tf.keras.layers.Dense(
                     units=4 * self.hidden_units,
                     activation=tf.nn.silu,
-                    kernel_initializer=defaut_initializer(scale=1.0),
+                    kernel_initializer=utils.defaut_initializer(scale=1.0),
                 ),
                 tf.keras.layers.Dense(
                     units=4 * self.hidden_units,
-                    kernel_initializer=defaut_initializer(scale=1.0),
+                    kernel_initializer=utils.defaut_initializer(scale=1.0),
                 ),
             ],
             name="step_block",
@@ -92,7 +90,7 @@ class DiffusionUNet(BaseDiffusionModel):
             kernel_size=(3, 3),
             padding="same",
             data_format=self.data_format,
-            kernel_initializer=defaut_initializer(scale=1.0),
+            kernel_initializer=utils.defaut_initializer(scale=1.0),
             name="encoder_conv_0",
         )
 
@@ -178,7 +176,7 @@ class DiffusionUNet(BaseDiffusionModel):
                     strides=(1, 1),
                     padding="same",
                     data_format=self.data_format,
-                    kernel_initializer=defaut_initializer(scale=1.0),
+                    kernel_initializer=utils.defaut_initializer(scale=1.0),
                 ),
             ],
             name="output_block",

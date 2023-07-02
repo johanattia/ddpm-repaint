@@ -2,8 +2,10 @@
 
 
 from typing import Any, Dict
+
 import tensorflow as tf
-from src import ddpm
+
+from generative_models import ddpm
 
 
 class RePaintDiffuser(tf.Module):
