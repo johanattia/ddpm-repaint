@@ -2,13 +2,12 @@
 
 
 from typing import Any, Dict, Iterable, Union
-
 import tensorflow as tf
 
 from generative_models.ddpm import scheduler, utils
 
 
-class BaseDiffuser(tf.keras.Model):
+class BaseDiffusionModel(tf.keras.Model):
     """Abstract class for Denoising Diffusion Probabilistic Model.
     U-Net architecture must be implemented as a child class.
     """

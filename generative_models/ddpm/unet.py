@@ -1,12 +1,8 @@
 """U-Net Diffusion Model from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/models/unet.py"""
 
 
-from typing import Dict, Iterable, List, Tuple
-
+from typing import Dict, List, Tuple
 import tensorflow as tf
-
-import tensorflow_addons as tfa
-from tensorflow_addons import types
 
 from generative_models.ddpm import diffusion, utils
 from generative_models.ddpm.layers import (
@@ -21,7 +17,13 @@ from generative_models.ddpm.layers import (
 # TODO: model tests
 
 
-class DiffusionUNet(diffusion.BaseDiffuser):
+class DiffusionUNet(diffusion.BaseDiffusionModel):
+    """Denoising Diffusion Probabilistic Model.
+
+    Full DDPM implementation with U-Net, Diffusion/Noise Scheduler, training
+    and sampling algorithms.
+    """
+
     def __init__(
         self,
         image_shape: tf.TensorShape,
@@ -110,7 +112,7 @@ class DiffusionUNet(diffusion.BaseDiffuser):
                     dropout=self.dropout,
                     output_channel=channels_units,
                     use_attention=(
-                        self.image_shape[0] / (2 ** i) in self.attention_resolutions
+                        self.image_shape[0] / (2**i) in self.attention_resolutions
                     ),
                     downsample=i != self.n_resolutions - 1,
                     use_conv=self.use_conv,
@@ -154,7 +156,7 @@ class DiffusionUNet(diffusion.BaseDiffuser):
                     dropout=self.dropout,
                     output_channel=channels_units,
                     use_attention=(
-                        self.image_shape[0] / (2 ** i) in self.attention_resolutions
+                        self.image_shape[0] / (2**i) in self.attention_resolutions
                     ),
                     upsample=i != 0,
                     use_conv=self.use_conv,
@@ -165,7 +167,7 @@ class DiffusionUNet(diffusion.BaseDiffuser):
         # Output Block
         self.output_block = tf.keras.Sequential(
             [
-                tfa.layers.GroupNormalization(
+                tf.keras.layers.GroupNormalization(
                     groups=self.groups,
                     axis=-1 if self.data_format == "channels_last" else 1,
                 ),
@@ -182,9 +184,7 @@ class DiffusionUNet(diffusion.BaseDiffuser):
             name="output_block",
         )
 
-    def call(
-        self, inputs: Dict[str, tf.Tensor], training: bool = None
-    ) -> types.FloatTensorLike:
+    def call(self, inputs: Dict[str, tf.Tensor], training: bool = None) -> tf.Tensor:
         # Timestep & Class Embedding
         step_embed = self.step_embedding(inputs["step"])
 

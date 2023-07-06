@@ -51,7 +51,7 @@ class DiffusionSynthesisCallback(tf.keras.callbacks.Callback):
                 labels_names = [self.class_dict[i] for i in labels.numpy()]
                 input_kwargs["label"] = labels
                 print(
-                    f"\nEpoch {epoch+1}: generating {self.sampling_size} samples with labels {labels}"
+                    f"\nEpoch {epoch+1}: generate {self.sampling_size} samples with labels {labels}"
                 )
             else:
                 labels_names = None

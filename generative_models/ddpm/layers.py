@@ -6,9 +6,6 @@ from typing import Callable, Dict, Iterable, List, Tuple, Union
 import tensorflow as tf
 from tensorflow.keras import layers
 
-import tensorflow_addons as tfa
-from tensorflow_addons import types
-
 from generative_models.ddpm import utils
 
 
@@ -19,7 +16,7 @@ from generative_models.ddpm import utils
 
 def PositionEmbedding(embed_dim: int):
     # Reference: https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/nn.py#L90-L109
-    def _sinusoidal_embedding(steps: types.TensorLike) -> types.FloatTensorLike:
+    def fourier_embed_fn(steps: tf.Tensor) -> tf.Tensor:
         # input shape: (B, 1)
         # batch_size = tf.shape(steps)[0]
         # if steps.shape != tf.TensorShape([batch_size, 1]):
@@ -39,7 +36,7 @@ def PositionEmbedding(embed_dim: int):
 
         return step_embed  # output shape: (B, embed_dim)
 
-    return layers.Lambda(_sinusoidal_embedding)
+    return layers.Lambda(fourier_embed_fn)
 
 
 class Upsample(layers.Layer):
@@ -49,6 +46,10 @@ class Upsample(layers.Layer):
         super().__init__(**kwargs)
         self.data_format = data_format
         self._use_conv = use_conv
+
+        # Layers
+        self.conv = None
+        self.upsample = None
 
     def build(self, input_shape: tf.TensorShape):
         input_shape = tf.TensorShape(input_shape)
@@ -82,7 +83,7 @@ class Upsample(layers.Layer):
             )
         super().build(input_shape)
 
-    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         x = self.upsample(inputs)
 
         if self._use_conv:
@@ -146,6 +147,9 @@ class Downsample(layers.Layer):
         self.downsample_fn = downsample_fn
         self.data_format = data_format
 
+        # Layer/Op
+        self.downsample = None
+
     def build(self, input_shape: tf.TensorShape):
         input_shape = tf.TensorShape(input_shape)
         if len(input_shape) != 4:
@@ -165,7 +169,7 @@ class Downsample(layers.Layer):
         )
         super().build(input_shape)
 
-    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         return self.downsample(inputs)
 
 
@@ -195,10 +199,10 @@ class ResBlock(layers.Layer):
         self.dropout = layers.Dropout(rate=self._dropout)
 
         self.groups = groups
-        self.group_norm1 = tfa.layers.GroupNormalization(
+        self.group_norm1 = layers.GroupNormalization(
             groups=self.groups, axis=-1 if data_format == "channels_last" else 1
         )
-        self.group_norm2 = tfa.layers.GroupNormalization(
+        self.group_norm2 = layers.GroupNormalization(
             groups=self.groups, axis=-1 if data_format == "channels_last" else 1
         )
 
@@ -259,9 +263,7 @@ class ResBlock(layers.Layer):
 
         super().build(input_shape)
 
-    def call(
-        self, inputs: Tuple[types.FloatTensorLike], training: bool = None
-    ) -> types.FloatTensorLike:
+    def call(self, inputs: Tuple[tf.Tensor], training: bool = None) -> tf.Tensor:
         x, step_embed = inputs
 
         h = tf.nn.silu(self.group_norm1(x))
@@ -299,7 +301,7 @@ class SpatialAttention(layers.Layer):
         self.data_format = data_format
 
         self.groups = groups
-        self.group_norm = tfa.layers.GroupNormalization(
+        self.group_norm = layers.GroupNormalization(
             groups=self.groups, axis=-1 if data_format == "channels_last" else 1
         )
 
@@ -353,7 +355,7 @@ class SpatialAttention(layers.Layer):
         )
         super().build(input_shape)
 
-    def call(self, inputs: types.FloatTensorLike) -> types.FloatTensorLike:
+    def call(self, inputs: tf.Tensor) -> tf.Tensor:
         batch, height, width = self._get_batch_shapes(inputs)
         # scale = int(self.attention_units) ** (-0.5)
 
@@ -379,7 +381,7 @@ class SpatialAttention(layers.Layer):
 
         return inputs + attention_output
 
-    def _get_batch_shapes(self, inputs: types.FloatTensorLike) -> Tuple[int]:
+    def _get_batch_shapes(self, inputs: tf.Tensor) -> Tuple[int]:
         input_shape = tf.shape(inputs)
         if self.data_format == "channels_last":
             batch, height, width = input_shape[0], input_shape[1], input_shape[2]
@@ -418,9 +420,7 @@ class ResAttentionBlock(layers.Layer):
             data_format=data_format, groups=groups, name="spatial_attention"
         )
 
-    def call(
-        self, inputs: Tuple[types.FloatTensorLike], training: bool = None
-    ) -> types.FloatTensorLike:
+    def call(self, inputs: Tuple[tf.Tensor], training: bool = None) -> tf.Tensor:
         x, step_embed = inputs
         return self.attention(self.resblock(inputs=(x, step_embed), training=training))
 
@@ -501,8 +501,8 @@ class UNetEncoderBlock(layers.Layer):
                 )
 
     def call(
-        self, inputs: Iterable[types.FloatTensorLike], training: bool = None
-    ) -> List[types.FloatTensorLike]:
+        self, inputs: Iterable[tf.Tensor], training: bool = None
+    ) -> List[tf.Tensor]:
         h, step_embed = inputs
 
         outputs = []
@@ -594,9 +594,7 @@ class UNetDecoderBlock(layers.Layer):
                     ),
                 )
 
-    def call(
-        self, inputs: Iterable[types.FloatTensorLike], training: bool = None
-    ) -> types.FloatTensorLike:
+    def call(self, inputs: Iterable[tf.Tensor], training: bool = None) -> tf.Tensor:
         h, hidden_states, step_embed = inputs
 
         for i in range(self.n_residual_blocks + 1):
