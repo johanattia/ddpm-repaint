@@ -252,7 +252,7 @@ class ResBlock(layers.Layer):
                     equation = "abcd,be->aecd"
                     output_shape = (self.output_channel, None, None)
 
-                self.output_projection = layers.experimental.EinsumDense(
+                self.output_projection = layers.EinsumDense(
                     equation,
                     output_shape=output_shape,
                     bias_axes="e",
@@ -341,13 +341,13 @@ class SpatialAttention(layers.Layer):
             output_equation = "bchw,cd->bdhw"
             output_shape = (channels, None, None)
 
-        self.attention_projection = layers.experimental.EinsumDense(
+        self.attention_projection = layers.EinsumDense(
             projection_equation,
             output_shape=projection_shape,
             bias_axes="ae",
             kernel_initializer=utils.defaut_initializer(scale=1.0),
         )
-        self.output_dense = layers.experimental.EinsumDense(
+        self.output_dense = layers.EinsumDense(
             output_equation,
             output_shape=output_shape,
             bias_axes="d",
@@ -356,12 +356,17 @@ class SpatialAttention(layers.Layer):
         super().build(input_shape)
 
     def call(self, inputs: tf.Tensor) -> tf.Tensor:
-        batch, height, width = self._get_batch_shapes(inputs)
-        # scale = int(self.attention_units) ** (-0.5)
+        input_shape = tf.shape(inputs)
 
-        # 1: (B, H, W, C)/(B, C, H, W) => (B, H, W, C, 3)/(B, C, H, W, 3)
-        # 2: (B, H, W, C, 3)/(B, C, H, W, 3) => 3 * (B, H, W, C)/(B, C, H, W)
+        if self.data_format == "channels_last":
+            batch, height, width = input_shape[0], input_shape[1], input_shape[2]
+        else:
+            batch, height, width = input_shape[0], input_shape[2], input_shape[3]
+
+        # (B, H, W, C)/(B, C, H, W) => (B, H, W, C, 3)/(B, C, H, W, 3)
         attention_tensors = self.attention_projection(self.group_norm(inputs))
+
+        # (B, H, W, C, 3)/(B, C, H, W, 3) => 3 * (B, H, W, C)/(B, C, H, W)
         query, key, value = tf.unstack(attention_tensors, axis=-1)
 
         attention_weights = tf.einsum(self.attention_equation, query, key) * self.scale
@@ -373,21 +378,13 @@ class SpatialAttention(layers.Layer):
             attention_weights, [batch, height, width, height, width]
         )
 
-        # # (B, H, W, C) or (B, C, H, W)
+        # (B, H, W, C) or (B, C, H, W)
         attention_output = tf.einsum(
             self.attention_output_equation, attention_weights, value
         )
         attention_output = self.output_dense(attention_output)
 
         return inputs + attention_output
-
-    def _get_batch_shapes(self, inputs: tf.Tensor) -> Tuple[int]:
-        input_shape = tf.shape(inputs)
-        if self.data_format == "channels_last":
-            batch, height, width = input_shape[0], input_shape[1], input_shape[2]
-        else:
-            batch, height, width = input_shape[0], input_shape[2], input_shape[3]
-        return batch, height, width
 
     def get_config(self) -> Dict:
         config = super().get_config()
