@@ -4,14 +4,70 @@
 from typing import Callable, Dict, Iterable, List, Tuple, Union
 
 import tensorflow as tf
-from tensorflow.keras import layers
-
-from generative_models.ddpm import utils
+from tensorflow import keras
+from tensorflow.keras import initializers, layers
 
 
 # TODO:
 # Review PositionEmbedding : layer with in-memory embedding rather than lambda ?
 # Review groupnorm for ResBlock for channels_first
+
+
+def ffnet(
+    output_units: int,
+    hidden_units: Iterable[int],
+    output_activation: Union[str, Callable] = None,
+    hidden_activation: Union[str, Callable] = None,
+    use_bias: bool = True,
+    dropout: float = None,
+    name: str = None,
+) -> keras.Sequential:
+    """_summary_
+
+    Args:
+        output_units (int, optional): _description_.
+            Defaults to None.
+        hidden_units (Iterable[int], optional): _description_.
+            Defaults to [].
+        output_activation (Union[str, Callable], optional): _description_.
+            Defaults to None.
+        hidden_activation (Union[str, Callable], optional): _description_.
+            Defaults to None.
+        use_bias (bool, optional): _description_.
+            Defaults to True.
+        dropout (float, optional): _description_.
+            Defaults to None.
+        name (str, optional): _description_.
+            Defaults to None.
+
+    Returns:
+        keras.Sequential: _description_
+    """
+    name = name if name is not None else "ffn"
+    ffn_layers: List[layers.Layer] = []
+    for units in hidden_units:
+        if dropout is not None:
+            ffn_layers.extend(
+                [
+                    layers.Dense(
+                        units=units, activation=hidden_activation, use_bias=use_bias
+                    ),
+                    layers.Dropout(rate=dropout),
+                ]
+            )
+        else:
+            ffn_layers.append(
+                layers.Dense(
+                    units=units, activation=hidden_activation, use_bias=use_bias
+                ),
+            )
+    if output_units is not None:
+        ffn_layers.append(
+            layers.Dense(
+                units=output_units, activation=output_activation, use_bias=use_bias
+            )
+        )
+    return keras.Sequential(ffn_layers, name)
 
 
 def PositionEmbedding(embed_dim: int):
@@ -79,7 +135,9 @@ class Upsample(layers.Layer):
                 data_format=self.data_format,
                 dilation_rate=(1, 1),
                 use_bias=True,
-                kernel_initializer=utils.defaut_initializer(scale=1.0),
+                kernel_initializer=initializers.VarianceScaling(
+                    scale=1.0, mode="fan_avg", distribution="uniform"
+                ),
             )
         super().build(input_shape)
 
@@ -110,7 +168,9 @@ def downsample_conv(data_format: str = "channels_last", channels: int = 3):
         data_format=data_format,
         dilation_rate=(1, 1),
         use_bias=True,
-        kernel_initializer=utils.defaut_initializer(scale=1.0),
+        kernel_initializer=initializers.VarianceScaling(
+            scale=1.0, mode="fan_avg", distribution="uniform"
+        ),
     )
 
 
@@ -130,7 +190,9 @@ def downsample_pool_and_conv(data_format: str = "channels_last", channels: int =
                 data_format=data_format,
                 dilation_rate=(1, 1),
                 use_bias=True,
-                kernel_initializer=utils.defaut_initializer(scale=1.0),
+                kernel_initializer=initializers.VarianceScaling(
+                    scale=1.0, mode="fan_avg", distribution="uniform"
+                ),
             ),
         ]
     )
@@ -229,14 +291,18 @@ class ResBlock(layers.Layer):
         self.dense = layers.Dense(
             units=self.output_channel,
             use_bias=True,
-            kernel_initializer=utils.defaut_initializer(1.0),
+            kernel_initializer=initializers.VarianceScaling(
+                scale=1.0, mode="fan_avg", distribution="uniform"
+            ),
         )
         conv_kwargs = dict(
             filters=self.output_channel,
             kernel_size=self.kernel_size,
             padding="same",
             data_format=self.data_format,
-            kernel_initializer=utils.defaut_initializer(scale=1.0),
+            kernel_initializer=initializers.VarianceScaling(
+                scale=1.0, mode="fan_avg", distribution="uniform"
+            ),
         )
         self.conv1 = layers.Conv2D(**conv_kwargs)
         self.conv2 = layers.Conv2D(**conv_kwargs)
@@ -256,10 +322,12 @@ class ResBlock(layers.Layer):
                     equation,
                     output_shape=output_shape,
                     bias_axes="e",
-                    kernel_initializer=utils.defaut_initializer(scale=1.0),
+                    kernel_initializer=initializers.VarianceScaling(
+                        scale=1.0, mode="fan_avg", distribution="uniform"
+                    ),
                 )
-        # else:
-        #    self.output_projection = layers.Identity()
+        else:
+            self.output_projection = layers.Identity()
 
         super().build(input_shape)
 
@@ -275,10 +343,9 @@ class ResBlock(layers.Layer):
         h = self.dropout(h, training=training)
         h = self.conv2(h)
 
-        if self.output_projection is not None:
-            x = self.output_projection(x)
+        output = h + self.output_projection(x)
 
-        return h + x  # h + self.output_projection(x)
+        return output
 
     def get_config(self) -> Dict:
         config = super().get_config()
@@ -295,7 +362,7 @@ class ResBlock(layers.Layer):
         return config
 
 
-class SpatialAttention(layers.Layer):
+class Attention2D(layers.Layer):
     def __init__(self, data_format: str = "channels_last", groups: int = 32, **kwargs):
         super().__init__(**kwargs)
         self.data_format = data_format
@@ -345,13 +412,17 @@ class SpatialAttention(layers.Layer):
             projection_equation,
             output_shape=projection_shape,
             bias_axes="ae",
-            kernel_initializer=utils.defaut_initializer(scale=1.0),
+            kernel_initializer=initializers.VarianceScaling(
+                scale=1.0, mode="fan_avg", distribution="uniform"
+            ),
         )
         self.output_dense = layers.EinsumDense(
             output_equation,
             output_shape=output_shape,
             bias_axes="d",
-            kernel_initializer=utils.defaut_initializer(scale=1.0),
+            kernel_initializer=initializers.VarianceScaling(
+                scale=1.0, mode="fan_avg", distribution="uniform"
+            ),
         )
         super().build(input_shape)
 

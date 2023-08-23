@@ -1,14 +1,17 @@
-"""Diffusion Model from https://github.com/hojonathanho/diffusion/blob/master/diffusion_tf/models/unet.py"""
+"""Diffusion Model based on https://github.com/hojonathanho/diffusion/"""
 
 
-from typing import Any, Dict, Iterable, Union
+from typing import Any, Dict, Iterable, List, Union
+
 import tensorflow as tf
+from tensorflow import keras
 
-from generative_models.ddpm import scheduler, utils
+from tf_ddpm.scheduler import DiffusionScheduler
+from tf_ddpm.utils import get_input_shape
 
 
-class BaseDiffusionModel(tf.keras.Model):
-    """Abstract class for Denoising Diffusion Probabilistic Model.
+class BaseDiffuser(keras.Model):
+    """Base class for Denoising Diffusion Probabilistic Model.
     U-Net architecture must be implemented as a child class.
     """
 
@@ -16,15 +19,16 @@ class BaseDiffusionModel(tf.keras.Model):
         self,
         image_shape: Union[Iterable[int], tf.TensorShape],
         data_format: str = "channels_last",
-        class_conditioning: bool = False,
-        n_classes: int = None,
         maxstep: int = 1000,
         beta_min: float = 1e-4,
         beta_max: float = 0.02,
+        class_conditioning: bool = False,
+        n_classes: int = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.image_shape = utils.get_input_shape(image_shape)  # (H, W, C) or (C, H, W)
+        # Image attributes
+        self.image_shape = get_input_shape(image_shape)  # (H, W, C) or (C, H, W)
 
         if data_format not in ["channels_last", "channels_first"]:
             if data_format is None:
@@ -37,6 +41,18 @@ class BaseDiffusionModel(tf.keras.Model):
                 )
         self.data_format = data_format
 
+        # Scheduler attributes
+        self.maxstep = maxstep
+        self.beta_min = beta_min
+        self.beta_max = beta_max
+        self.diffusion_scheduler = DiffusionScheduler(
+            image_shape=self.image_shape,
+            maxstep=maxstep,
+            beta_min=beta_min,
+            beta_max=beta_max,
+        )
+
+        # Class conditioning attributes
         self.class_conditioning = class_conditioning
         if class_conditioning and not isinstance(n_classes, int):
             raise TypeError(
@@ -44,31 +60,42 @@ class BaseDiffusionModel(tf.keras.Model):
             )
         self.n_classes = n_classes
 
-        self.maxstep = maxstep
-        self.beta_min = beta_min
-        self.beta_max = beta_max
-        self.diffusion_scheduler = scheduler.DiffusionScheduler(
-            image_shape=self.image_shape,
-            maxstep=maxstep,
-            beta_min=beta_min,
-            beta_max=beta_max,
-        )
-
+        # Serving attributes
         self.serving_function = self.make_serving_function(force=True)
+        self.serving_signature = self.make_serving_signature()
 
     def call(self, inputs: Dict[str, tf.Tensor], training: bool = None) -> tf.Tensor:
+        """_summary_
+
+        Args:
+            inputs (Dict[str, tf.Tensor]): _description_
+            training (bool, optional): _description_.
+                Defaults to None.
+
+        Raises:
+            NotImplementedError: _description_
+
+        Returns:
+            tf.Tensor: _description_
+        """
         raise NotImplementedError(
-            """`call` method must be implemented in a child class.
-            Expected `inputs` argument is a dict of tensors with mandatory
-            keys `image` and `steps`. In case of class conditioning modeling,
-            a key `label` is also expected.
+            """`call` method must be implemented in a child class. Expected `inputs` argument 
+            is a dict of tensors with mandatory keys `image` and `steps`. In case of class 
+            conditioning modeling, a key `label` is also expected.
             """
         )
 
     def train_step(self, data: Iterable[tf.Tensor]) -> Dict[str, tf.Tensor]:
-        """Training procedure, Algorithm 1, https://arxiv.org/pdf/2006.11239.pdf"""
-        x, y, sample_weight = tf.keras.utils.unpack_x_y_sample_weight(data)
-        batch_size = tf.shape(x)[0]
+        """Training procedure, Algorithm 1, https://arxiv.org/pdf/2006.11239.pdf.
+
+        Args:
+            data (Iterable[tf.Tensor]): _description_
+
+        Returns:
+            Dict[str, tf.Tensor]: _description_
+        """
+        sample, label, sample_weight = keras.utils.unpack_x_y_sample_weight(data)
+        batch_size = tf.shape(sample)[0]
 
         steps = tf.random.uniform(
             shape=[batch_size, 1], maxval=self.maxstep, dtype=tf.int32
@@ -80,11 +107,11 @@ class BaseDiffusionModel(tf.keras.Model):
 
             # Add noise: q(x_t | x_0)
             noisy_sample = self.diffusion_scheduler.add_noise(
-                sample=x, steps=steps, eps=eps_target
+                sample=sample, steps=steps, eps=eps_target
             )
             # Predict noise with optional class conditioning
             eps_pred = self(
-                {"image": noisy_sample, "step": steps, "label": y}, training=True
+                {"image": noisy_sample, "step": steps, "label": label}, training=True
             )
             # Mean squared error calculation
             loss = self.compiled_loss(
@@ -100,7 +127,16 @@ class BaseDiffusionModel(tf.keras.Model):
     def reverse_step(
         self, noisy_sample: tf.Tensor, steps: tf.Tensor, label: tf.Tensor = None
     ) -> tf.Tensor:
-        """Reverse (generative) step from denoising U-Net"""
+        """Reverse (generative) step from denoising U-Net
+
+        Args:
+            noisy_sample (tf.Tensor): _description_
+            steps (tf.Tensor): _description_
+            label (tf.Tensor, optional): _description_. Defaults to None.
+
+        Returns:
+            tf.Tensor: _description_
+        """
         sampling_size, multiplier = tf.shape(noisy_sample)[0], self.image_shape.rank
 
         # Predicted distribution parameters from diffusion posterior
@@ -133,15 +169,31 @@ class BaseDiffusionModel(tf.keras.Model):
 
         return denoised_sample
 
-    def generative_process(
+    def generate(
         self,
-        sampling_size: int = 4,
-        label: Iterable[int] = None,
+        sampling_size: int,
+        label: tf.Tensor = None,
         output_trajectory: bool = False,
         verbose: int = 1,
-    ) -> tf.Tensor:
-        """Sampling procedure, Algorithm 2, https://arxiv.org/pdf/2006.11239.pdf"""
+    ) -> Union[tf.Tensor, List[tf.Tensor]]:
+        """_summary_
 
+        Args:
+            sampling_size (int): _description_
+            label (tf.Tensor, optional): _description_.
+                Defaults to None.
+            output_trajectory (bool, optional): _description_.
+                Defaults to False.
+            verbose (int, optional): _description_.
+                Defaults to 1.
+
+        Raises:
+            TypeError: _description_
+            ValueError: _description_
+
+        Returns:
+            Union[tf.Tensor, List[tf.Tensor]]: _description_
+        """
         if self.class_conditioning:
             if label is None:
                 raise TypeError(
@@ -165,7 +217,7 @@ class BaseDiffusionModel(tf.keras.Model):
             sample = tf.random.normal([sampling_size] + self.image_shape)
 
         iteration = 0
-        progbar = tf.keras.utils.Progbar(target=self.maxstep, verbose=verbose)
+        progbar = keras.utils.Progbar(target=self.maxstep, verbose=verbose)
 
         for step in reversed(range(self.maxstep)):
             steps = tf.expand_dims(tf.repeat(step, [sampling_size]), axis=1)
@@ -185,6 +237,32 @@ class BaseDiffusionModel(tf.keras.Model):
         progbar.update(iteration, finalize=True)
 
         return sample
+
+    def inpaint(
+        self,
+        image: tf.Tensor,
+        mask: tf.Tensor,
+        resampling_steps: int,
+        label: tf.Tensor = None,
+        output_trajectory: bool = False,
+        verbose: int = 1,
+    ) -> Union[tf.Tensor, List[tf.Tensor]]:
+        """_summary_
+
+        Args:
+            image (tf.Tensor): _description_
+            mask (tf.Tensor): _description_
+            label (Iterable[int], optional): _description_.
+                Defaults to None.
+            output_trajectory (bool, optional): _description_.
+                Defaults to False.
+            verbose (int, optional): _description_.
+                Defaults to 1.
+
+        Returns:
+            Union[tf.Tensor, List[tf.Tensor]]: _description_
+        """
+        return
 
     def make_serving_function(self, force: bool = False):
         """Make generative function for serving"""
@@ -253,7 +331,7 @@ class BaseDiffusionModel(tf.keras.Model):
 
         return [tf.TensorSpec(shape=[], dtype=tf.int32)]
 
-    def get_config(self) -> Dict:
+    def get_config(self) -> Dict[str, Any]:
         config = super().get_config()
         config.update(
             {

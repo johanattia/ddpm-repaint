@@ -11,12 +11,6 @@ class ImageStepDict(TypedDict, total=False):
     label: Optional[tf.Tensor]
 
 
-def defaut_initializer(scale: float = 1.0):
-    return tf.keras.initializers.VarianceScaling(
-        scale=scale, mode="fan_avg", distribution="uniform"
-    )
-
-
 def clone_initializer(initializer: tf.keras.initializers.Initializer):
     if isinstance(
         initializer,

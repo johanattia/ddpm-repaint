@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 sys.path.append("..")
-from generative_models import ddpm
+import tf_ddpm
 
 
 class DiffusionFlow(FlowSpec):
@@ -189,7 +189,7 @@ class DiffusionFlow(FlowSpec):
             .prefetch(tf.data.AUTOTUNE)
         )
 
-        diffuser = ddpm.unet.DiffusionUNet.from_config(self.diffuser_config)
+        diffuser = tf_ddpm.unet.DiffusionUNet.from_config(self.diffuser_config)
 
         if self.ema:
             optimizer = tf.keras.optimizers.Adam(
@@ -210,7 +210,7 @@ class DiffusionFlow(FlowSpec):
         STEPS_PER_EPOCH = int(np.ceil(self.dataset_size / self.batch_size))
 
         checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(self.checkpoint_config)
-        synthesis_callback = ddpm.callbacks.DiffusionSynthesisCallback(
+        synthesis_callback = tf_ddpm.callbacks.DiffusionSynthesisCallback(
             self.synthesis_config
         )
 
@@ -233,7 +233,7 @@ class DiffusionFlow(FlowSpec):
     def save(self):
         """Save model for deployment purpose"""
 
-        diffuser = ddpm.unet.DiffusionUNet.from_config(self.diffuser_config)
+        diffuser = tf_ddpm.unet.DiffusionUNet.from_config(self.diffuser_config)
         diffuser.load_weights(self.best_weights_path)
 
         self.export_path = self.models_directory / f"cifar10_diffuser"

@@ -2,13 +2,16 @@
 
 
 from typing import Dict, List, Tuple
-import tensorflow as tf
 
-from generative_models.ddpm import diffusion, utils
-from generative_models.ddpm.layers import (
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import initializers, layers
+
+from tf_ddpm.base_diffusion import BaseDiffuser
+from tf_ddpm.layers import (
     PositionEmbedding,
     ResBlock,
-    SpatialAttention,
+    Attention2D,
     UNetEncoderBlock,
     UNetDecoderBlock,
 )
@@ -17,7 +20,7 @@ from generative_models.ddpm.layers import (
 # TODO: model tests
 
 
-class DiffusionUNet(diffusion.BaseDiffusionModel):
+class DiffusionUNet(BaseDiffuser):
     """Denoising Diffusion Probabilistic Model.
 
     Full DDPM implementation with U-Net, Diffusion/Noise Scheduler, training
@@ -41,6 +44,7 @@ class DiffusionUNet(diffusion.BaseDiffusionModel):
         groups: int = 8,
         **kwargs,
     ):
+        # BaseDiffuser attributes
         super().__init__(
             image_shape=image_shape,
             data_format=data_format,
@@ -49,6 +53,7 @@ class DiffusionUNet(diffusion.BaseDiffusionModel):
             maxstep=maxstep,
             **kwargs,
         )
+        # U-Net attributes
         self.hidden_units = hidden_units
         self.n_residual_blocks = n_residual_blocks
         self.attention_resolutions = attention_resolutions
@@ -61,30 +66,32 @@ class DiffusionUNet(diffusion.BaseDiffusionModel):
 
         # Timestep Layers
         self.step_embedding = PositionEmbedding(embed_dim=self.hidden_units)
-        self.step_block = tf.keras.Sequential(
+        self.step_block = keras.Sequential(
             [
-                tf.keras.layers.Dense(
-                    units=4 * self.hidden_units,
-                    activation=tf.nn.silu,
-                    kernel_initializer=utils.defaut_initializer(scale=1.0),
+                layers.Dense(
+                    units=4 * hidden_units,
+                    activation="swish",
+                    kernel_initializer=initializers.VarianceScaling(
+                        scale=1.0, mode="fan_avg", distribution="uniform"
+                    ),
                 ),
-                tf.keras.layers.Dense(
+                layers.Dense(
                     units=4 * self.hidden_units,
-                    kernel_initializer=utils.defaut_initializer(scale=1.0),
+                    kernel_initializer=initializers.VarianceScaling(
+                        scale=1.0, mode="fan_avg", distribution="uniform"
+                    ),
                 ),
             ],
             name="step_block",
         )
 
         # Class-conditioning Embedding Layer
-        self.class_embedding = None
-
         if self.class_conditioning:
-            self.class_embedding = tf.keras.layers.Embedding(
-                input_dim=self.n_classes,
-                output_dim=self.hidden_units,
-                name="class_embedding",
+            self.class_embedding = layers.Embedding(
+                input_dim=n_classes, output_dim=hidden_units, name="class_embedding"
             )
+        else:
+            self.class_embedding = None
 
         # Downsampling Encoder Layers
         self.encoder_conv_0 = tf.keras.layers.Conv2D(
@@ -92,7 +99,9 @@ class DiffusionUNet(diffusion.BaseDiffusionModel):
             kernel_size=(3, 3),
             padding="same",
             data_format=self.data_format,
-            kernel_initializer=utils.defaut_initializer(scale=1.0),
+            kernel_initializer=initializers.VarianceScaling(
+                scale=1.0, mode="fan_avg", distribution="uniform"
+            ),
             name="encoder_conv_0",
         )
 
@@ -127,7 +136,7 @@ class DiffusionUNet(diffusion.BaseDiffusionModel):
             dropout=self.dropout,
             name="middle_residual_block1",
         )
-        self.middle_attention = SpatialAttention(
+        self.middle_attention = Attention2D(
             data_format=self.data_format,
             groups=self.groups,
             name="middle_attention",
@@ -164,25 +173,24 @@ class DiffusionUNet(diffusion.BaseDiffusionModel):
                 ),
             )
 
-        # Output Block
-        self.output_block = tf.keras.Sequential(
-            [
-                tf.keras.layers.GroupNormalization(
-                    groups=self.groups,
-                    axis=-1 if self.data_format == "channels_last" else 1,
+        # Output block
+        output_layers = [
+            layers.GroupNormalization(
+                groups=groups, axis=-1 if data_format == "channels_last" else 1
+            ),
+            layers.Activation("swish"),
+            layers.Conv2D(
+                filters=output_channel,
+                kernel_size=(3, 3),
+                strides=(1, 1),
+                padding="same",
+                data_format=data_format,
+                kernel_initializer=initializers.VarianceScaling(
+                    scale=1.0, mode="fan_avg", distribution="uniform"
                 ),
-                tf.keras.layers.Activation(tf.nn.silu),
-                tf.keras.layers.Conv2D(
-                    filters=self.output_channel,
-                    kernel_size=(3, 3),
-                    strides=(1, 1),
-                    padding="same",
-                    data_format=self.data_format,
-                    kernel_initializer=utils.defaut_initializer(scale=1.0),
-                ),
-            ],
-            name="output_block",
-        )
+            ),
+        ]
+        self.output_block = keras.Sequential(output_layers, name="output_block")
 
     def call(self, inputs: Dict[str, tf.Tensor], training: bool = None) -> tf.Tensor:
         # Timestep & Class Embedding

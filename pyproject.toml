@@ -1,23 +1,25 @@
 [tool.poetry]
-name = "generative-models"
+name = "tf_ddpm"
 version = "0.1.0"
-description = "Modern Generative Models including Diffusion, VQGAN and Transformer-based models."
+description = "Denoising Diffusion Probabilistic and RePaint models"
 authors = ["Johan Attia"]
 license = "MIT"
 readme = "README.md"
-packages = [{include = "generative_models"}]
+packages = [
+    { include = "tf_ddpm", from = "src" },
+]
 
 [tool.poetry.dependencies]
 python = ">=3.8,<3.11"
-tensorflow = "2.12.0"
+tensorflow = "2.13.0"
 matplotlib = "^3.7.1"
-metaflow = "^2.9.6"
-typeguard = "^4.0.0"
 
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.3.3"
 pytest = "^7.4.0"
+typeguard = "^4.0.0"
+metaflow = "^2.9.6"
 
 [build-system]
 requires = ["poetry-core"]

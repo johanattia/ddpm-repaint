@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.keras import preprocessing
 
-from generative_models.ddpm import utils
+from src.tf_ddpm import utils
 
 
 # Reference: https://keras.io/examples/generative/gaugan/#gan-monitor-callback

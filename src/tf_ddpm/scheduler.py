@@ -6,7 +6,7 @@ from typing import Dict, Iterable, Tuple, Union
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from generative_models.ddpm import utils
+from src.tf_ddpm import utils
 
 
 class DiffusionScheduler(layers.Layer):

@@ -1,4 +1,4 @@
-from . import callbacks, diffusion, layers, scheduler, unet, utils
+from tf_ddpm import base_diffusion, callbacks, layers, scheduler, unet, utils
 
 
 CONFIG_ADAM_32x32 = dict(
