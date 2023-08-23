@@ -345,7 +345,3 @@ class BaseDiffuser(keras.Model):
             }
         )
         return config
-
-    @classmethod
-    def from_config(cls, config: Dict[str, Any]):
-        return cls(**config)
